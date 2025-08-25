@@ -1,0 +1,53 @@
+{
+  "name": "lagruta-ticket-system",
+  "version": "1.0.0",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "build": "electron-builder",
+    "build-win": "electron-builder --win",
+    "build-mac": "electron-builder --mac",
+    "build-linux": "electron-builder --linux",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --publish=never"
+  },
+  "build": {
+    "appId": "com.lagruta.taquilla",
+    "productName": "La Gruta - Sistema de Taquilla",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    }
+  },
+  "keywords": [
+    "electron",
+    "desktop",
+    "app"
+  ],
+  "author": "La Gruta Balneario y Spa",
+  "license": "MIT",
+  "description": "Sistema de taquilla para el balneario La Gruta - Gestión de ventas de entradas, formas de pago y reportes diarios",
+  "devDependencies": {
+    "electron": "^37.3.1"
+  },
+  "dependencies": {
+    "electron-builder": "^26.0.12"
+  }
+}

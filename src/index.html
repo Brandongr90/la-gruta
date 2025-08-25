@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline';"
+    />
+    <title>La Gruta - Sistema de Taquilla</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header con Logo -->
+      <header class="header">
+        <div class="logo-section">
+          <img src="../assets/lagruta-logo.png" alt="La Gruta Logo" class="logo-image">
+        </div>
+      </header>
+
+      <main class="main-content">
+        <div class="ticket-form">
+          <!-- Sección de Forma de Pago -->
+          <div class="form-section payment-section">
+            <h3>Forma de Pago</h3>
+            <div class="payment-options">
+              <label class="radio-card">
+                <span class="keyboard-shortcut">E</span>
+                <input type="radio" name="payment" value="efectivo" checked>
+                <div class="radio-content">
+                  <span class="payment-icon">💵</span>
+                  <span>Efectivo</span>
+                </div>
+              </label>
+              <label class="radio-card">
+                <span class="keyboard-shortcut">T</span>
+                <input type="radio" name="payment" value="tarjeta">
+                <div class="radio-content">
+                  <span class="payment-icon">💳</span>
+                  <span>Tarjeta</span>
+                </div>
+              </label>
+              <label class="radio-card">
+                <span class="keyboard-shortcut">R</span>
+                <input type="radio" name="payment" value="transferencia">
+                <div class="radio-content">
+                  <span class="payment-icon">📱</span>
+                  <span>Transferencia</span>
+                </div>
+              </label>
+            </div>
+            
+            <!-- Terminal Selection (oculto por defecto) -->
+            <div class="terminal-selection" id="terminalSelection" style="display: none;">
+              <h4>Seleccionar Terminal <span style="color: #4299e1; font-weight: normal; font-size: 0.875rem;">(Presiona Q o W)</span></h4>
+              <div class="terminal-options">
+                <label class="radio-card small">
+                  <span class="keyboard-shortcut">Q</span>
+                  <input type="radio" name="terminal" value="terminal1">
+                  <div class="radio-content">
+                    <span>Terminal 1</span>
+                  </div>
+                </label>
+                <label class="radio-card small">
+                  <span class="keyboard-shortcut">W</span>
+                  <input type="radio" name="terminal" value="terminal2">
+                  <div class="radio-content">
+                    <span>Terminal 2</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sección de Entradas -->
+          <div class="form-section entries-section">
+            <div class="entries-row">
+              <div class="input-group">
+                <label for="entradas">Entrada General</label>
+                <input type="number" id="entradas" min="0" value="0" class="number-input">
+              </div>
+              <div class="input-group">
+                <label for="cortesias">Cortesías</label>
+                <select id="cortesias" class="select-input">
+                  <option value="0">0</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sección de Cálculos -->
+          <div class="form-section calculation-section">
+            <div class="calculation-display">
+              <div class="calc-row">
+                <span class="calc-label">Entradas a cobrar:</span>
+                <span class="calc-value" id="entradasCobrar">0</span>
+              </div>
+              <div class="calc-row">
+                <span class="calc-label">Precio por entrada:</span>
+                <span class="calc-value">$300.00</span>
+              </div>
+              <div class="calc-row total-row">
+                <span class="calc-label">Total:</span>
+                <span class="calc-value total" id="total">$0.00</span>
+              </div>
+            </div>
+
+            <!-- Sección de Efectivo (oculto por defecto) -->
+            <div class="cash-section" id="cashSection" style="display: block;">
+              <div class="input-group">
+                <label for="efectivoRecibido">Efectivo Recibido</label>
+                <input type="number" id="efectivoRecibido" step="0.01" min="0" class="money-input">
+              </div>
+              <div class="change-display" id="changeDisplay" style="display: none;">
+                <span class="change-label">Cambio:</span>
+                <span class="change-value" id="cambio">$0.00</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Botón de Imprimir -->
+          <div class="form-section action-section">
+            <button id="imprimirBoleto" class="btn-primary" disabled>
+              🎫 Imprimir Boleto
+            </button>
+          </div>
+        </div>
+
+        <!-- Sección de Cierre de Día -->
+        <div class="daily-close-section">
+          <button id="cierreVentas" class="btn-secondary">
+            📊 Cierre de Ventas del Día
+          </button>
+          <!-- Botón oculto para reporte completo -->
+          <button id="reporteCompleto" class="btn-hidden" style="opacity: 0; height: 0; overflow: hidden;">
+            Reporte Completo
+          </button>
+        </div>
+      </main>
+
+      <!-- Modal para mostrar reportes -->
+      <div id="reportModal" class="modal" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="modalTitle">Reporte de Ventas</h3>
+            <span class="close" id="closeModal">&times;</span>
+          </div>
+          <div class="modal-body" id="modalBody">
+            <!-- Contenido del reporte se insertará aquí -->
+          </div>
+          <div class="modal-footer">
+            <button id="printReport" class="btn-primary">Imprimir Reporte</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
