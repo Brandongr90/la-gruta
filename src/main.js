@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, ipcMain } = require("electron");
 const path = require("path");
+const { dbManager } = require("./db/db-manager");
 
 // Mantener referencia global de la ventana
 let mainWindow;
@@ -7,10 +8,13 @@ let mainWindow;
 function createWindow() {
   // Crear la ventana del navegador
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 800,
-    minHeight: 600,
+    width: 1440,
+    height: 900,
+    minWidth: 1440,
+    minHeight: 900,
+    maxWidth: 1440,
+    maxHeight: 900,
+    resizable: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -18,6 +22,8 @@ function createWindow() {
     },
     icon: path.join(__dirname, "../assets/icon.png"),
     show: false, // No mostrar hasta que esté lista
+    center: true,
+    titleBarStyle: 'default'
   });
 
   // Cargar el archivo HTML
@@ -93,3 +99,40 @@ const template = [
 
 const menu = Menu.buildFromTemplate(template);
 Menu.setApplicationMenu(menu);
+
+// IPC Handlers para operaciones de base de datos
+ipcMain.handle("db:verificar-conexion", async () => {
+  return await dbManager.verificarConexion();
+});
+
+ipcMain.handle("db:obtener-siguiente-folio", async () => {
+  return await dbManager.obtenerSiguienteFolio();
+});
+
+ipcMain.handle("db:guardar-venta", async (event, ventaData) => {
+  return await dbManager.guardarVenta(ventaData);
+});
+
+ipcMain.handle("db:sincronizar-ventas", async (event, ventas) => {
+  return await dbManager.sincronizarVentas(ventas);
+});
+
+ipcMain.handle("db:obtener-reporte-dia-actual", async () => {
+  return await dbManager.obtenerReporteDiaActual();
+});
+
+ipcMain.handle("db:obtener-reporte-diario", async (event, fecha) => {
+  return await dbManager.obtenerReporteDiario(fecha);
+});
+
+ipcMain.handle("db:obtener-reportes-semanal", async (event, limite) => {
+  return await dbManager.obtenerReportesSemanal(limite);
+});
+
+ipcMain.handle("db:obtener-reportes-mensual", async (event, limite) => {
+  return await dbManager.obtenerReportesMensual(limite);
+});
+
+ipcMain.handle("db:obtener-ventas-del-dia", async () => {
+  return await dbManager.obtenerVentasDelDia();
+});

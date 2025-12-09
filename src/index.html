@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;"
     />
     <title>La Gruta - Sistema de Taquilla</title>
     <link rel="stylesheet" href="styles.css" />
@@ -73,8 +73,9 @@
             </div>
           </div>
 
-          <!-- Sección de Entradas -->
+          <!-- Sección de Entradas (Columna 2) -->
           <div class="form-section entries-section">
+            <h3>Datos del Boleto</h3>
             <div class="entries-row">
               <div class="input-group">
                 <label for="entradas">Entrada General</label>
@@ -89,41 +90,44 @@
             </div>
           </div>
 
-          <!-- Sección de Cálculos -->
-          <div class="form-section calculation-section">
-            <div class="calculation-display">
-              <div class="calc-row">
-                <span class="calc-label">Entradas a cobrar:</span>
-                <span class="calc-value" id="entradasCobrar">0</span>
+          <!-- Sección de Cálculos y Acción (Columna 3) -->
+          <div class="column-three">
+            <div class="form-section calculation-section">
+              <h3>Resumen</h3>
+              <div class="calculation-display">
+                <div class="calc-row">
+                  <span class="calc-label">Entradas a cobrar:</span>
+                  <span class="calc-value" id="entradasCobrar">0</span>
+                </div>
+                <div class="calc-row">
+                  <span class="calc-label">Precio por entrada:</span>
+                  <span class="calc-value">$300.00</span>
+                </div>
+                <div class="calc-row total-row">
+                  <span class="calc-label">Total:</span>
+                  <span class="calc-value total" id="total">$0.00</span>
+                </div>
               </div>
-              <div class="calc-row">
-                <span class="calc-label">Precio por entrada:</span>
-                <span class="calc-value">$300.00</span>
-              </div>
-              <div class="calc-row total-row">
-                <span class="calc-label">Total:</span>
-                <span class="calc-value total" id="total">$0.00</span>
+
+              <!-- Sección de Efectivo (oculto por defecto) -->
+              <div class="cash-section" id="cashSection" style="display: block;">
+                <div class="input-group">
+                  <label for="efectivoRecibido">Efectivo Recibido</label>
+                  <input type="number" id="efectivoRecibido" step="0.01" min="0" class="money-input">
+                </div>
+                <div class="change-display" id="changeDisplay" style="display: none;">
+                  <span class="change-label">Cambio:</span>
+                  <span class="change-value" id="cambio">$0.00</span>
+                </div>
               </div>
             </div>
 
-            <!-- Sección de Efectivo (oculto por defecto) -->
-            <div class="cash-section" id="cashSection" style="display: block;">
-              <div class="input-group">
-                <label for="efectivoRecibido">Efectivo Recibido</label>
-                <input type="number" id="efectivoRecibido" step="0.01" min="0" class="money-input">
-              </div>
-              <div class="change-display" id="changeDisplay" style="display: none;">
-                <span class="change-label">Cambio:</span>
-                <span class="change-value" id="cambio">$0.00</span>
-              </div>
+            <!-- Botón de Imprimir -->
+            <div class="form-section action-section">
+              <button id="imprimirBoleto" class="btn-primary" disabled>
+                🎫 Imprimir Boleto
+              </button>
             </div>
-          </div>
-
-          <!-- Botón de Imprimir -->
-          <div class="form-section action-section">
-            <button id="imprimirBoleto" class="btn-primary" disabled>
-              🎫 Imprimir Boleto
-            </button>
           </div>
         </div>
 
@@ -132,9 +136,9 @@
           <button id="cierreVentas" class="btn-secondary">
             📊 Cierre de Ventas del Día
           </button>
-          <!-- Botón oculto para reporte completo -->
-          <button id="reporteCompleto" class="btn-hidden" style="opacity: 0; height: 0; overflow: hidden;">
-            Reporte Completo
+          <!-- Botón oculto para reporte completo - acceso mediante click en logo -->
+          <button id="reporteCompleto" class="btn-hidden" style="display: none;">
+            📈 Reporte Completo
           </button>
         </div>
       </main>
@@ -156,6 +160,7 @@
       </div>
     </div>
 
+    <script src="client-db.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>

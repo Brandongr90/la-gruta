@@ -10,6 +10,7 @@ let ventasDelDia = {
 };
 
 let folioActual = 1;
+let dbInicializada = false;
 
 // Constantes
 const PRECIO_ENTRADA = 300;
@@ -36,12 +37,23 @@ const closeModal = document.getElementById('closeModal');
 const printReportBtn = document.getElementById('printReport');
 
 // Event Listeners
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   console.log('Sistema de Taquilla La Gruta - Iniciado');
+
+  // Inicializar base de datos
+  await inicializarBaseDeDatos();
+
   cargarDatosGuardados();
   actualizarCalculos();
   configurarNavegacionAutomatica();
-  
+
+  // Acceso oculto mediante click en logo
+  const logoImage = document.querySelector('.logo-image');
+  if (logoImage) {
+    logoImage.addEventListener('click', mostrarReporteCompleto);
+    logoImage.style.cursor = 'pointer';
+  }
+
   // Sistema de atajos de teclado
   document.addEventListener('keydown', (e) => {
     // Activar botón oculto para reporte completo (combinación de teclas Ctrl+Shift+R)
@@ -304,7 +316,7 @@ function actualizarBotonImprimir() {
   imprimirBoletoBtn.disabled = !canPrint;
 }
 
-function imprimirBoleto() {
+async function imprimirBoleto() {
   const entradas = parseInt(entradasInput.value) || 0;
   const cortesias = parseInt(cortesiasSelect.value) || 0;
   const entradasCobrar = entradas - cortesias;
@@ -312,11 +324,11 @@ function imprimirBoleto() {
   const selectedPayment = document.querySelector('input[name="payment"]:checked')?.value;
   const selectedTerminal = document.querySelector('input[name="terminal"]:checked')?.value;
   const efectivoRecibido = parseFloat(efectivoRecibidoInput.value) || 0;
-  
-  // Actualizar ventas del día
+
+  // Actualizar ventas del día (local)
   ventasDelDia.totalEntradas += entradas;
   ventasDelDia.totalCortesias += cortesias;
-  
+
   switch (selectedPayment) {
     case 'efectivo':
       ventasDelDia.efectivo += total;
@@ -332,7 +344,34 @@ function imprimirBoleto() {
       }
       break;
   }
-  
+
+  // Preparar datos de la venta para la base de datos
+  const ventaData = {
+    entradas,
+    cortesias,
+    entradasCobrar,
+    total,
+    formaPago: selectedPayment,
+    terminal: selectedTerminal,
+    efectivoRecibido: selectedPayment === 'efectivo' ? efectivoRecibido : null,
+    cambio: selectedPayment === 'efectivo' ? efectivoRecibido - total : null
+  };
+
+  // Guardar en la base de datos (online o offline)
+  if (dbInicializada && window.clientDB) {
+    try {
+      const resultado = await window.clientDB.guardarVenta(ventaData);
+      if (resultado.success) {
+        if (resultado.mode === 'online' && resultado.folio) {
+          folioActual = resultado.folio + 1;
+        }
+        console.log(`Venta guardada en modo ${resultado.mode}`);
+      }
+    } catch (error) {
+      console.error('Error al guardar venta en BD:', error);
+    }
+  }
+
   // Generar ticket
   const ticket = generarTicket({
     folio: folioActual++,
@@ -345,18 +384,18 @@ function imprimirBoleto() {
     efectivoRecibido: selectedPayment === 'efectivo' ? efectivoRecibido : null,
     cambio: selectedPayment === 'efectivo' ? efectivoRecibido - total : null
   });
-  
+
   // Simular impresión (en una implementación real, aquí se enviaría a la impresora)
   console.log('TICKET IMPRESO:');
   console.log(ticket);
-  
+
   // Mostrar confirmación visual
   mostrarConfirmacionImpresion();
-  
+
   // Limpiar formulario
   limpiarFormulario();
-  
-  // Guardar datos
+
+  // Guardar datos localmente
   guardarDatos();
 }
 
@@ -442,31 +481,87 @@ function limpiarFormulario() {
 
 function mostrarCierreVentas() {
   const cuentaFiscal = ventasDelDia.terminal1 + (ventasDelDia.efectivo * 0.1);
+  const fechaHoy = new Date().toLocaleDateString('es-MX', { 
+    weekday: 'long', 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
   
   const reporte = `
-    <div style="text-align: left; line-height: 1.6;">
-      <h4 style="margin-bottom: 1rem; color: #1a202c;">Cierre de Ventas del Día</h4>
-      <p><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-MX')}</p>
-      
-      <div style="margin: 1.5rem 0; padding: 1rem; background: #f7fafc; border-radius: 8px;">
-        <h5 style="color: #2d3748; margin-bottom: 0.75rem;">Cuenta Fiscal</h5>
-        <p><strong>Terminal 1:</strong> $${ventasDelDia.terminal1.toFixed(2)}</p>
-        <p><strong>10% Efectivo:</strong> $${(ventasDelDia.efectivo * 0.1).toFixed(2)}</p>
-        <div style="border-top: 2px solid #4299e1; margin-top: 0.75rem; padding-top: 0.75rem;">
-          <p style="font-size: 1.125rem;"><strong>Total a Reportar: $${cuentaFiscal.toFixed(2)}</strong></p>
+    <div class="report-container">
+      <!-- Header del reporte -->
+      <div class="report-header">
+        <div class="report-icon">📊</div>
+        <div class="report-title-section">
+          <h2 class="report-title">Cierre de Ventas del Día</h2>
+          <p class="report-date">📅 ${fechaHoy}</p>
         </div>
       </div>
       
-      <div style="margin: 1.5rem 0; padding: 1rem; background: #f0fff4; border: 1px solid #68d391; border-radius: 8px;">
-        <h5 style="color: #276749; margin-bottom: 0.75rem;">Resumen de Entradas</h5>
-        <p><strong>Total Entradas:</strong> ${ventasDelDia.totalEntradas}</p>
-        <p><strong>Cortesías:</strong> ${ventasDelDia.totalCortesias}</p>
-        <p><strong>Entradas Cobradas:</strong> ${ventasDelDia.totalEntradas - ventasDelDia.totalCortesias}</p>
+      <!-- Cuenta Fiscal - Destacada -->
+      <div class="report-card fiscal-card">
+        <div class="card-header">
+          <div class="card-icon">🏛️</div>
+          <h3>Cuenta Fiscal</h3>
+        </div>
+        <div class="fiscal-items">
+          <div class="fiscal-item">
+            <div class="fiscal-item-info">
+              <span class="fiscal-label">💳 Terminal 1</span>
+              <span class="fiscal-amount">$${ventasDelDia.terminal1.toFixed(2)}</span>
+            </div>
+          </div>
+          <div class="fiscal-item">
+            <div class="fiscal-item-info">
+              <span class="fiscal-label">💵 10% Efectivo</span>
+              <span class="fiscal-amount">$${(ventasDelDia.efectivo * 0.1).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        <div class="fiscal-total">
+          <div class="total-line"></div>
+          <div class="total-amount">
+            <span class="total-label">Total a Reportar</span>
+            <span class="total-value">$${cuentaFiscal.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Resumen de Entradas -->
+      <div class="report-card entries-card">
+        <div class="card-header">
+          <div class="card-icon">🎫</div>
+          <h3>Resumen de Entradas</h3>
+        </div>
+        <div class="entries-stats">
+          <div class="stat-item">
+            <div class="stat-icon">🎟️</div>
+            <div class="stat-info">
+              <span class="stat-label">Total Entradas</span>
+              <span class="stat-value">${ventasDelDia.totalEntradas}</span>
+            </div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-icon">🎁</div>
+            <div class="stat-info">
+              <span class="stat-label">Cortesías</span>
+              <span class="stat-value">${ventasDelDia.totalCortesias}</span>
+            </div>
+          </div>
+          <div class="stat-item highlight">
+            <div class="stat-icon">💰</div>
+            <div class="stat-info">
+              <span class="stat-label">Entradas Cobradas</span>
+              <span class="stat-value">${ventasDelDia.totalEntradas - ventasDelDia.totalCortesias}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
   
-  modalTitle.textContent = 'Cierre de Ventas del Día';
+  modalTitle.textContent = '📊 Cierre de Ventas del Día';
   modalBody.innerHTML = reporte;
   reportModal.style.display = 'flex';
 }
@@ -486,43 +581,190 @@ function mostrarBotonReporteCompleto() {
 function mostrarReporteCompleto() {
   const totalGeneral = ventasDelDia.efectivo + ventasDelDia.transferencia + ventasDelDia.terminal1 + ventasDelDia.terminal2;
   const cuentaFiscal = ventasDelDia.terminal1 + (ventasDelDia.efectivo * 0.1);
+  const fechaHoy = new Date().toLocaleDateString('es-MX', { 
+    weekday: 'long', 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
+  
+  // Calcular porcentajes para gráfico visual
+  const porcentajeEfectivo = totalGeneral > 0 ? (ventasDelDia.efectivo / totalGeneral * 100) : 0;
+  const porcentajeTransferencia = totalGeneral > 0 ? (ventasDelDia.transferencia / totalGeneral * 100) : 0;
+  const porcentajeTerminal1 = totalGeneral > 0 ? (ventasDelDia.terminal1 / totalGeneral * 100) : 0;
+  const porcentajeTerminal2 = totalGeneral > 0 ? (ventasDelDia.terminal2 / totalGeneral * 100) : 0;
   
   const reporte = `
-    <div style="text-align: left; line-height: 1.6;">
-      <h4 style="margin-bottom: 1rem; color: #1a202c;">Reporte Completo del Día</h4>
-      <p><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-MX')}</p>
-      
-      <div style="margin: 1.5rem 0; padding: 1rem; background: #f7fafc; border-radius: 8px;">
-        <h5 style="color: #2d3748; margin-bottom: 0.75rem;">Desglose por Forma de Pago</h5>
-        <p><strong>Efectivo:</strong> $${ventasDelDia.efectivo.toFixed(2)}</p>
-        <p><strong>Transferencia:</strong> $${ventasDelDia.transferencia.toFixed(2)}</p>
-        <p><strong>Terminal 1:</strong> $${ventasDelDia.terminal1.toFixed(2)}</p>
-        <p><strong>Terminal 2:</strong> $${ventasDelDia.terminal2.toFixed(2)}</p>
-        <div style="border-top: 2px solid #e2e8f0; margin-top: 0.75rem; padding-top: 0.75rem;">
-          <p style="font-size: 1.125rem;"><strong>Total General: $${totalGeneral.toFixed(2)}</strong></p>
+    <div class="report-container">
+      <!-- Header del reporte -->
+      <div class="report-header">
+        <div class="report-icon">📈</div>
+        <div class="report-title-section">
+          <h2 class="report-title">Reporte Completo del Día</h2>
+          <p class="report-date">📅 ${fechaHoy}</p>
         </div>
       </div>
       
-      <div style="margin: 1.5rem 0; padding: 1rem; background: #ebf8ff; border: 1px solid #4299e1; border-radius: 8px;">
-        <h5 style="color: #2c5282; margin-bottom: 0.75rem;">Cuenta Fiscal</h5>
-        <p><strong>Terminal 1:</strong> $${ventasDelDia.terminal1.toFixed(2)}</p>
-        <p><strong>10% Efectivo:</strong> $${(ventasDelDia.efectivo * 0.1).toFixed(2)}</p>
-        <div style="border-top: 2px solid #4299e1; margin-top: 0.75rem; padding-top: 0.75rem;">
-          <p style="font-size: 1.125rem;"><strong>Total Cuenta Fiscal: $${cuentaFiscal.toFixed(2)}</strong></p>
+      <!-- Resumen General -->
+      <div class="report-summary">
+        <div class="summary-item">
+          <div class="summary-icon">💰</div>
+          <div class="summary-info">
+            <span class="summary-label">Total del Día</span>
+            <span class="summary-value">$${totalGeneral.toFixed(2)}</span>
+          </div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-icon">🎫</div>
+          <div class="summary-info">
+            <span class="summary-label">Entradas Vendidas</span>
+            <span class="summary-value">${ventasDelDia.totalEntradas - ventasDelDia.totalCortesias}</span>
+          </div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-icon">📋</div>
+          <div class="summary-info">
+            <span class="summary-label">Folio Actual</span>
+            <span class="summary-value">${folioActual.toString().padStart(6, '0')}</span>
+          </div>
         </div>
       </div>
       
-      <div style="margin: 1.5rem 0; padding: 1rem; background: #f0fff4; border: 1px solid #68d391; border-radius: 8px;">
-        <h5 style="color: #276749; margin-bottom: 0.75rem;">Estadísticas de Entradas</h5>
-        <p><strong>Total Entradas:</strong> ${ventasDelDia.totalEntradas}</p>
-        <p><strong>Cortesías:</strong> ${ventasDelDia.totalCortesias}</p>
-        <p><strong>Entradas Cobradas:</strong> ${ventasDelDia.totalEntradas - ventasDelDia.totalCortesias}</p>
-        <p><strong>Folio Actual:</strong> ${folioActual.toString().padStart(6, '0')}</p>
+      <!-- Desglose por Forma de Pago -->
+      <div class="report-card payment-breakdown">
+        <div class="card-header">
+          <div class="card-icon">💳</div>
+          <h3>Desglose por Forma de Pago</h3>
+        </div>
+        <div class="payment-items">
+          <div class="payment-item">
+            <div class="payment-info">
+              <div class="payment-icon">💵</div>
+              <span class="payment-label">Efectivo</span>
+            </div>
+            <div class="payment-amount">
+              <span class="amount">$${ventasDelDia.efectivo.toFixed(2)}</span>
+              <div class="progress-bar">
+                <div class="progress-fill efectivo" style="width: ${porcentajeEfectivo}%"></div>
+              </div>
+              <span class="percentage">${porcentajeEfectivo.toFixed(1)}%</span>
+            </div>
+          </div>
+          <div class="payment-item">
+            <div class="payment-info">
+              <div class="payment-icon">📱</div>
+              <span class="payment-label">Transferencia</span>
+            </div>
+            <div class="payment-amount">
+              <span class="amount">$${ventasDelDia.transferencia.toFixed(2)}</span>
+              <div class="progress-bar">
+                <div class="progress-fill transferencia" style="width: ${porcentajeTransferencia}%"></div>
+              </div>
+              <span class="percentage">${porcentajeTransferencia.toFixed(1)}%</span>
+            </div>
+          </div>
+          <div class="payment-item">
+            <div class="payment-info">
+              <div class="payment-icon">💳</div>
+              <span class="payment-label">Terminal 1</span>
+            </div>
+            <div class="payment-amount">
+              <span class="amount">$${ventasDelDia.terminal1.toFixed(2)}</span>
+              <div class="progress-bar">
+                <div class="progress-fill terminal1" style="width: ${porcentajeTerminal1}%"></div>
+              </div>
+              <span class="percentage">${porcentajeTerminal1.toFixed(1)}%</span>
+            </div>
+          </div>
+          <div class="payment-item">
+            <div class="payment-info">
+              <div class="payment-icon">💳</div>
+              <span class="payment-label">Terminal 2</span>
+            </div>
+            <div class="payment-amount">
+              <span class="amount">$${ventasDelDia.terminal2.toFixed(2)}</span>
+              <div class="progress-bar">
+                <div class="progress-fill terminal2" style="width: ${porcentajeTerminal2}%"></div>
+              </div>
+              <span class="percentage">${porcentajeTerminal2.toFixed(1)}%</span>
+            </div>
+          </div>
+        </div>
+        <div class="payment-total">
+          <div class="total-line"></div>
+          <div class="total-amount">
+            <span class="total-label">Total General</span>
+            <span class="total-value">$${totalGeneral.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Cuenta Fiscal y Entradas en Grid -->
+      <div class="report-grid">
+        <!-- Cuenta Fiscal -->
+        <div class="report-card fiscal-card">
+          <div class="card-header">
+            <div class="card-icon">🏛️</div>
+            <h3>Cuenta Fiscal</h3>
+          </div>
+          <div class="fiscal-items">
+            <div class="fiscal-item">
+              <div class="fiscal-item-info">
+                <span class="fiscal-label">💳 Terminal 1</span>
+                <span class="fiscal-amount">$${ventasDelDia.terminal1.toFixed(2)}</span>
+              </div>
+            </div>
+            <div class="fiscal-item">
+              <div class="fiscal-item-info">
+                <span class="fiscal-label">💵 10% Efectivo</span>
+                <span class="fiscal-amount">$${(ventasDelDia.efectivo * 0.1).toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+          <div class="fiscal-total">
+            <div class="total-line"></div>
+            <div class="total-amount">
+              <span class="total-label">Total Fiscal</span>
+              <span class="total-value">$${cuentaFiscal.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Estadísticas de Entradas -->
+        <div class="report-card entries-card">
+          <div class="card-header">
+            <div class="card-icon">🎫</div>
+            <h3>Estadísticas de Entradas</h3>
+          </div>
+          <div class="entries-stats">
+            <div class="stat-item">
+              <div class="stat-icon">🎟️</div>
+              <div class="stat-info">
+                <span class="stat-label">Total Entradas</span>
+                <span class="stat-value">${ventasDelDia.totalEntradas}</span>
+              </div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-icon">🎁</div>
+              <div class="stat-info">
+                <span class="stat-label">Cortesías</span>
+                <span class="stat-value">${ventasDelDia.totalCortesias}</span>
+              </div>
+            </div>
+            <div class="stat-item highlight">
+              <div class="stat-icon">💰</div>
+              <div class="stat-info">
+                <span class="stat-label">Entradas Cobradas</span>
+                <span class="stat-value">${ventasDelDia.totalEntradas - ventasDelDia.totalCortesias}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
   
-  modalTitle.textContent = 'Reporte Completo del Día';
+  modalTitle.textContent = '📈 Reporte Completo del Día';
   modalBody.innerHTML = reporte;
   reportModal.style.display = 'flex';
 }
@@ -568,3 +810,123 @@ function reiniciarDia() {
 
 // Exponer función para debugging (opcional)
 window.reiniciarDia = reiniciarDia;
+
+// ============================================
+// Funciones de Base de Datos
+// ============================================
+
+async function inicializarBaseDeDatos() {
+  try {
+    if (window.clientDB) {
+      console.log('📦 Inicializando base de datos local...');
+      await window.clientDB.init();
+      dbInicializada = true;
+
+      // Configurar listener para estado de conexión
+      window.clientDB.agregarSyncListener((estado) => {
+        actualizarIndicadorEstado(estado);
+      });
+
+      // Verificar si hay ventas pendientes de sincronizar
+      const pendientes = await window.clientDB.contarVentasPendientes();
+      if (pendientes > 0) {
+        console.log(`⚠️ Hay ${pendientes} ventas pendientes de sincronizar`);
+        mostrarNotificacionSincronizacion(pendientes);
+      }
+
+      // Obtener folio actual desde Supabase si estamos online
+      if (navigator.onLine && window.electronAPI?.db) {
+        try {
+          const resultado = await window.electronAPI.db.obtenerSiguienteFolio();
+          if (resultado.success && resultado.folio) {
+            folioActual = resultado.folio;
+            console.log(`📋 Folio actual desde BD: ${folioActual}`);
+          }
+        } catch (error) {
+          console.warn('No se pudo obtener folio desde BD, usando local');
+        }
+      }
+
+      console.log('✅ Base de datos inicializada correctamente');
+    }
+  } catch (error) {
+    console.error('Error al inicializar base de datos:', error);
+    dbInicializada = false;
+  }
+}
+
+function actualizarIndicadorEstado(estado) {
+  // Aquí puedes agregar un indicador visual en la UI
+  if (estado.online !== undefined) {
+    if (estado.online) {
+      console.log('🟢 Estado: ONLINE');
+    } else {
+      console.log('🔴 Estado: OFFLINE');
+    }
+  }
+
+  if (estado.syncing !== undefined) {
+    if (estado.syncing) {
+      console.log('🔄 Sincronizando...');
+    } else if (estado.sincronizadas !== undefined) {
+      console.log(`✅ Sincronizadas: ${estado.sincronizadas} ventas`);
+    }
+  }
+}
+
+function mostrarNotificacionSincronizacion(cantidad) {
+  console.log(`📢 Notificación: ${cantidad} ventas pendientes de sincronización`);
+  // Aquí podrías mostrar una notificación visual al usuario
+}
+
+// Función para sincronizar manualmente
+async function sincronizarManualmente() {
+  if (window.clientDB) {
+    console.log('🔄 Iniciando sincronización manual...');
+    const resultado = await window.clientDB.sincronizar();
+    if (resultado.success) {
+      alert(`Sincronización completada: ${resultado.sincronizadas} ventas sincronizadas`);
+    } else {
+      alert(`Error en sincronización: ${resultado.message || resultado.error}`);
+    }
+  }
+}
+
+// Función para obtener reportes desde Supabase
+async function obtenerReporteDesdeSupabase(tipo = 'dia') {
+  if (!window.electronAPI?.db) {
+    console.warn('API de base de datos no disponible');
+    return null;
+  }
+
+  try {
+    let resultado;
+
+    switch (tipo) {
+      case 'dia':
+        resultado = await window.electronAPI.db.obtenerReporteDiaActual();
+        break;
+      case 'semana':
+        resultado = await window.electronAPI.db.obtenerReportesSemanal(10);
+        break;
+      case 'mes':
+        resultado = await window.electronAPI.db.obtenerReportesMensual(12);
+        break;
+      default:
+        return null;
+    }
+
+    if (resultado.success && resultado.data) {
+      return resultado.data;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error al obtener reporte desde Supabase:', error);
+    return null;
+  }
+}
+
+// Exponer funciones para debugging
+window.sincronizarManualmente = sincronizarManualmente;
+window.obtenerReporteDesdeSupabase = obtenerReporteDesdeSupabase;
