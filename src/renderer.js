@@ -11,9 +11,44 @@ let ventasDelDia = {
 
 let folioActual = 1;
 let dbInicializada = false;
+let tipoReporteActual = null; // 'publico' o 'privado'
 
 // Constantes
 const PRECIO_ENTRADA = 300;
+
+// Configuración de Impresora Térmica
+const CONFIG_IMPRESORA = {
+  ANCHO_TICKET_MM: 80,  // Ancho del ticket en milímetros
+  CARACTERES_POR_LINEA: 32,  // Aproximadamente para 80mm
+  USAR_IMPRESORA: false  // Cambiar a true cuando esté conectada la impresora
+};
+
+// Comandos ESC/POS para Impresoras Térmicas
+const COMANDOS_ESC_POS = {
+  // Comandos de inicialización
+  INIT: '\x1B\x40',                    // Inicializar impresora
+
+  // Comandos de corte
+  CORTE_PARCIAL: '\x1B\x6D',           // Corte parcial (deja pestaña pequeña)
+  CORTE_TOTAL: '\x1B\x69',             // Corte total
+
+  // Comandos de avance de papel
+  AVANZAR_3_LINEAS: '\x1B\x64\x03',   // Avanzar 3 líneas
+  AVANZAR_5_LINEAS: '\x1B\x64\x05',   // Avanzar 5 líneas
+
+  // Comandos de formato
+  NEGRITA_ON: '\x1B\x45\x01',          // Activar negrita
+  NEGRITA_OFF: '\x1B\x45\x00',         // Desactivar negrita
+  CENTRAR: '\x1B\x61\x01',             // Alinear al centro
+  IZQUIERDA: '\x1B\x61\x00',           // Alinear a la izquierda
+
+  // Tamaños de texto
+  TEXTO_NORMAL: '\x1D\x21\x00',        // Texto tamaño normal
+  TEXTO_DOBLE: '\x1D\x21\x11',         // Texto doble (ancho y alto)
+
+  // Código de barras (opcional para futuro)
+  CODIGO_BARRAS_128: '\x1D\x6B\x49',  // Código de barras CODE128
+};
 
 // Referencias a elementos DOM
 const paymentRadios = document.querySelectorAll('input[name="payment"]');
@@ -372,22 +407,44 @@ async function imprimirBoleto() {
     }
   }
 
-  // Generar ticket
-  const ticket = generarTicket({
-    folio: folioActual++,
-    entradas,
-    cortesias,
-    entradasCobrar,
-    total,
-    formaPago: selectedPayment,
-    terminal: selectedTerminal,
-    efectivoRecibido: selectedPayment === 'efectivo' ? efectivoRecibido : null,
-    cambio: selectedPayment === 'efectivo' ? efectivoRecibido - total : null
-  });
+  // Generar e imprimir tickets individuales (uno por cada entrada cobrada)
+  const folioBase = folioActual++;
+  const totalPorEntrada = entradasCobrar > 0 ? total / entradasCobrar : 0;
 
-  // Simular impresión (en una implementación real, aquí se enviaría a la impresora)
-  console.log('TICKET IMPRESO:');
-  console.log(ticket);
+  console.log('╔══════════════════════════════╗');
+  console.log('║   TICKETS IMPRESOS           ║');
+  console.log(`║   Total de entradas: ${entradasCobrar.toString().padStart(2, ' ')}      ║`);
+  console.log('╚══════════════════════════════╝');
+  console.log('');
+
+  // Imprimir un ticket por cada entrada cobrada
+  for (let i = 0; i < entradasCobrar; i++) {
+    const numEntrada = i + 1;
+    const ticket = generarTicketIndividual({
+      folio: folioBase,
+      numEntrada: numEntrada,
+      totalEntradas: entradasCobrar,
+      precioPorEntrada: totalPorEntrada,
+      formaPago: selectedPayment,
+      terminal: selectedTerminal,
+      // Solo mostrar info de pago en el primer ticket
+      mostrarPago: i === 0,
+      totalVenta: total,
+      efectivoRecibido: selectedPayment === 'efectivo' ? efectivoRecibido : null,
+      cambio: selectedPayment === 'efectivo' ? efectivoRecibido - total : null
+    });
+
+    // Imprimir ticket
+    if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
+      await imprimirTicketTermico(ticket);
+    } else {
+      console.log(ticket);
+    }
+  }
+
+  console.log('═══════════════════════════════');
+  console.log(`Total de tickets impresos: ${entradasCobrar}`);
+  console.log('═══════════════════════════════');
 
   // Mostrar confirmación visual
   mostrarConfirmacionImpresion();
@@ -399,10 +456,10 @@ async function imprimirBoleto() {
   guardarDatos();
 }
 
-function generarTicket(datos) {
+function generarTicketIndividual(datos) {
   const fecha = new Date().toLocaleString('es-MX');
-  
-  return `
+
+  let ticket = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            LA GRUTA
        Balneario y Spa
@@ -411,24 +468,31 @@ function generarTicket(datos) {
 FOLIO: ${datos.folio.toString().padStart(6, '0')}
 FECHA: ${fecha}
 
-ENTRADAS GENERALES: ${datos.entradas}
-CORTESÍAS: ${datos.cortesias}
-ENTRADAS A COBRAR: ${datos.entradasCobrar}
+ENTRADA ${datos.numEntrada} de ${datos.totalEntradas}
 
-PRECIO UNITARIO: $${PRECIO_ENTRADA.toFixed(2)}
-TOTAL: $${datos.total.toFixed(2)}
-
-FORMA DE PAGO: ${datos.formaPago.toUpperCase()}${datos.terminal ? ` (${datos.terminal.toUpperCase()})` : ''}
-
-${datos.efectivoRecibido !== null ? `
-EFECTIVO RECIBIDO: $${datos.efectivoRecibido.toFixed(2)}
-CAMBIO: $${datos.cambio.toFixed(2)}
-` : ''}
+PRECIO: $${datos.precioPorEntrada.toFixed(2)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+
+  // Solo mostrar información de pago en el primer ticket
+  if (datos.mostrarPago) {
+    ticket += `
+INFORMACIÓN DE PAGO:
+
+FORMA DE PAGO: ${datos.formaPago.toUpperCase()}${datos.terminal ? ` (${datos.terminal.toUpperCase()})` : ''}
+TOTAL VENTA: $${datos.totalVenta.toFixed(2)}
+${datos.efectivoRecibido !== null ? `EFECTIVO RECIBIDO: $${datos.efectivoRecibido.toFixed(2)}
+CAMBIO: $${datos.cambio.toFixed(2)}` : ''}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+  }
+
+  ticket += `
 PROHIBIDA LA ENTRADA DE:
 • Alimentos
-• Bebidas  
+• Bebidas
 • Mascotas
 USO EXCLUSIVO DE TRAJE DE BAÑO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -440,18 +504,67 @@ Gracias por tu visita!
 
 No válido como comprobante fiscal
 Una vez pagado no hay devoluciones
-Solicitar factura en el momento 
+Solicitar factura en el momento
 de la compra
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   `;
+
+  return ticket;
+}
+
+// Función para enviar datos a la impresora térmica
+async function imprimirTicketTermico(contenidoTicket) {
+  try {
+    console.log('🖨️ Enviando a impresora térmica...');
+
+    // Preparar datos para impresión con comandos ESC/POS
+    let datosImpresion = '';
+
+    // 1. Inicializar impresora
+    datosImpresion += COMANDOS_ESC_POS.INIT;
+
+    // 2. Agregar contenido del ticket
+    datosImpresion += contenidoTicket;
+
+    // 3. Avanzar un poco de papel antes del corte
+    datosImpresion += COMANDOS_ESC_POS.AVANZAR_3_LINEAS;
+
+    // 4. Corte parcial
+    datosImpresion += COMANDOS_ESC_POS.CORTE_PARCIAL;
+
+    // Enviar a la impresora vía Electron IPC
+    if (window.electronAPI?.imprimirTicket) {
+      const resultado = await window.electronAPI.imprimirTicket(datosImpresion);
+      if (resultado.success) {
+        console.log('✅ Ticket impreso correctamente');
+      } else {
+        console.error('❌ Error al imprimir:', resultado.error);
+      }
+    } else {
+      // Si no está configurado el IPC, mostrar en consola
+      console.log('📋 Simulación de impresión:');
+      console.log(contenidoTicket);
+      console.log('🔪 [CORTE PARCIAL]');
+      console.log('');
+    }
+
+  } catch (error) {
+    console.error('Error al imprimir ticket:', error);
+    // Fallback: mostrar en consola
+    console.log(contenidoTicket);
+  }
 }
 
 function mostrarConfirmacionImpresion() {
   const originalText = imprimirBoletoBtn.textContent;
-  imprimirBoletoBtn.textContent = '✅ Boleto Impreso';
+  const entradas = parseInt(entradasInput.value) || 0;
+  const cortesias = parseInt(cortesiasSelect.value) || 0;
+  const entradasCobrar = entradas - cortesias;
+
+  imprimirBoletoBtn.textContent = `✅ ${entradasCobrar} Ticket${entradasCobrar !== 1 ? 's' : ''} Impreso${entradasCobrar !== 1 ? 's' : ''}`;
   imprimirBoletoBtn.style.background = 'linear-gradient(135deg, #68d391 0%, #48bb78 100%)';
-  
+
   setTimeout(() => {
     imprimirBoletoBtn.textContent = originalText;
     imprimirBoletoBtn.style.background = '';
@@ -480,6 +593,8 @@ function limpiarFormulario() {
 }
 
 async function mostrarCierreVentas() {
+  tipoReporteActual = 'publico'; // Marcar como reporte público
+
   const fechaHoy = new Date().toLocaleDateString('es-MX', {
     weekday: 'long',
     year: 'numeric',
@@ -583,6 +698,8 @@ function mostrarBotonReporteCompleto() {
 }
 
 async function mostrarReporteCompleto() {
+  tipoReporteActual = 'privado'; // Marcar como reporte privado
+
   const fechaHoy = new Date().toLocaleDateString('es-MX', {
     weekday: 'long',
     year: 'numeric',
@@ -814,8 +931,12 @@ async function mostrarReporteCompleto() {
   reportModal.style.display = 'flex';
 }
 
-function imprimirReporte() {
-  window.print();
+async function imprimirReporte() {
+  if (tipoReporteActual === 'publico') {
+    await imprimirReportePublico();
+  } else if (tipoReporteActual === 'privado') {
+    await imprimirReportePrivado();
+  }
 }
 
 function guardarDatos() {
@@ -855,6 +976,255 @@ function reiniciarDia() {
 
 // Exponer función para debugging (opcional)
 window.reiniciarDia = reiniciarDia;
+
+// ============================================
+// Funciones de Impresión de Reportes
+// ============================================
+
+async function imprimirReportePublico() {
+  console.log('🖨️ Imprimiendo Reporte Público (Cuenta Fiscal)...');
+
+  // Obtener datos desde Supabase
+  let datosReporte = null;
+  if (window.electronAPI?.db && navigator.onLine) {
+    try {
+      const resultado = await window.electronAPI.db.obtenerReporteDiaActual();
+      if (resultado.success && resultado.data) {
+        datosReporte = resultado.data;
+      }
+    } catch (error) {
+      console.warn('Usando datos locales para imprimir');
+    }
+  }
+
+  if (!datosReporte) {
+    datosReporte = {
+      total_efectivo: ventasDelDia.efectivo || 0,
+      total_terminal1: ventasDelDia.terminal1 || 0
+    };
+  }
+
+  const terminal1 = parseFloat(datosReporte.total_terminal1) || 0;
+  const efectivo = parseFloat(datosReporte.total_efectivo) || 0;
+  const cuentaFiscal = terminal1 + (efectivo * 0.1);
+
+  const fecha = new Date().toLocaleString('es-MX');
+  const fechaSolo = new Date().toLocaleDateString('es-MX');
+
+  const ticket = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           LA GRUTA
+       Balneario y Spa
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   CIERRE DE VENTAS DEL DÍA
+        (CUENTA FISCAL)
+
+FECHA: ${fecha}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DESGLOSE:
+
+💳 Terminal 1
+   $${terminal1.toFixed(2)}
+
+💵 Efectivo
+   $${(efectivo * 0.1).toFixed(2)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TOTAL A REPORTAR:
+   $${cuentaFiscal.toFixed(2)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Este reporte muestra únicamente
+la cuenta fiscal para efectos
+administrativos públicos.
+
+Para reporte completo consultar
+con administración.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+www.lagruta-spa.com.mx
+Tel. 4151852162
+
+${fechaSolo}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  `;
+
+  console.log(ticket);
+
+  if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
+    // TODO: Aquí iría la integración con la impresora térmica
+    console.log('📄 Enviando a impresora térmica...');
+  } else {
+    console.log('📋 Impresión en consola (impresora no configurada)');
+  }
+}
+
+async function imprimirReportePrivado() {
+  console.log('🖨️ Imprimiendo Reporte Privado (Completo)...');
+
+  // Obtener datos del resumen
+  let datosReporte = null;
+  if (window.electronAPI?.db && navigator.onLine) {
+    try {
+      const resultado = await window.electronAPI.db.obtenerReporteDiaActual();
+      if (resultado.success && resultado.data) {
+        datosReporte = resultado.data;
+      }
+    } catch (error) {
+      console.warn('Usando datos locales para imprimir');
+    }
+  }
+
+  if (!datosReporte) {
+    datosReporte = {
+      total_entradas: ventasDelDia.totalEntradas || 0,
+      total_cortesias: ventasDelDia.totalCortesias || 0,
+      total_efectivo: ventasDelDia.efectivo || 0,
+      total_transferencia: ventasDelDia.transferencia || 0,
+      total_terminal1: ventasDelDia.terminal1 || 0,
+      total_terminal2: ventasDelDia.terminal2 || 0
+    };
+  }
+
+  const efectivo = parseFloat(datosReporte.total_efectivo) || 0;
+  const transferencia = parseFloat(datosReporte.total_transferencia) || 0;
+  const terminal1 = parseFloat(datosReporte.total_terminal1) || 0;
+  const terminal2 = parseFloat(datosReporte.total_terminal2) || 0;
+  const totalGeneral = efectivo + transferencia + terminal1 + terminal2;
+  const cuentaFiscal = terminal1 + (efectivo * 0.1);
+  const totalEntradas = parseInt(datosReporte.total_entradas) || 0;
+  const totalCortesias = parseInt(datosReporte.total_cortesias) || 0;
+  const entradasCobradas = totalEntradas - totalCortesias;
+
+  const fecha = new Date().toLocaleString('es-MX');
+  const fechaSolo = new Date().toLocaleDateString('es-MX');
+
+  // Obtener todas las ventas del día
+  let ventasDelDiaDetalle = [];
+  if (window.electronAPI?.db && navigator.onLine) {
+    try {
+      const resultado = await window.electronAPI.db.obtenerVentasDelDia();
+      if (resultado.success && resultado.data) {
+        ventasDelDiaDetalle = resultado.data;
+        console.log(`📋 ${ventasDelDiaDetalle.length} ventas obtenidas para el reporte`);
+      }
+    } catch (error) {
+      console.warn('No se pudieron obtener ventas detalladas');
+    }
+  }
+
+  let ticket = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           LA GRUTA
+       Balneario y Spa
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+     REPORTE COMPLETO DEL DÍA
+         (CONFIDENCIAL)
+
+FECHA: ${fecha}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         RESUMEN GENERAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ENTRADAS:
+  Total vendidas: ${totalEntradas}
+  Cortesías: ${totalCortesias}
+  Cobradas: ${entradasCobradas}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+       DESGLOSE POR PAGO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💵 Efectivo
+   $${efectivo.toFixed(2)}
+
+📱 Transferencia
+   $${transferencia.toFixed(2)}
+
+💳 Terminal 1
+   $${terminal1.toFixed(2)}
+
+💳 Terminal 2
+   $${terminal2.toFixed(2)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TOTAL GENERAL:
+   $${totalGeneral.toFixed(2)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         CUENTA FISCAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Terminal 1: $${terminal1.toFixed(2)}
+Efectivo 10%: $${(efectivo * 0.1).toFixed(2)}
+
+TOTAL FISCAL: $${cuentaFiscal.toFixed(2)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        DETALLE DE VENTAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+
+  // Agregar detalle de cada venta
+  if (ventasDelDiaDetalle.length > 0) {
+    ventasDelDiaDetalle.forEach((venta, index) => {
+      const fechaVenta = new Date(venta.fecha_hora).toLocaleString('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      const formaPagoTexto = venta.forma_pago.toUpperCase();
+      const terminalTexto = venta.terminal ? ` (${venta.terminal.toUpperCase()})` : '';
+
+      ticket += `
+VENTA #${index + 1} - FOLIO ${venta.folio.toString().padStart(6, '0')}
+Hora: ${fechaVenta}
+Entradas: ${venta.entradas_totales} | Cortesías: ${venta.cortesias}
+Cobradas: ${venta.entradas_cobradas}
+Pago: ${formaPagoTexto}${terminalTexto}
+Total: $${parseFloat(venta.monto_total).toFixed(2)}
+${venta.efectivo_recibido ? `Efectivo: $${parseFloat(venta.efectivo_recibido).toFixed(2)} | Cambio: $${parseFloat(venta.cambio).toFixed(2)}` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+    });
+  } else {
+    ticket += `
+No hay ventas registradas en la
+base de datos para el día de hoy.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+  }
+
+  ticket += `
+
+DOCUMENTO CONFIDENCIAL
+Solo para uso administrativo
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+www.lagruta-spa.com.mx
+Tel. 4151852162
+
+${fechaSolo}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  `;
+
+  console.log(ticket);
+
+  if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
+    // TODO: Aquí iría la integración con la impresora térmica
+    console.log('📄 Enviando a impresora térmica...');
+  } else {
+    console.log('📋 Impresión en consola (impresora no configurada)');
+  }
+}
 
 // ============================================
 // Funciones de Base de Datos

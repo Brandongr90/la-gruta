@@ -22,5 +22,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     obtenerReportesSemanal: (limite) => ipcRenderer.invoke("db:obtener-reportes-semanal", limite),
     obtenerReportesMensual: (limite) => ipcRenderer.invoke("db:obtener-reportes-mensual", limite),
     obtenerVentasDelDia: () => ipcRenderer.invoke("db:obtener-ventas-del-dia"),
-  }
+  },
+
+  // API de impresora térmica
+  imprimirTicket: (datosImpresion) => ipcRenderer.invoke("impresora:imprimir-ticket", datosImpresion),
 });

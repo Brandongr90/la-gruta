@@ -136,3 +136,42 @@ ipcMain.handle("db:obtener-reportes-mensual", async (event, limite) => {
 ipcMain.handle("db:obtener-ventas-del-dia", async () => {
   return await dbManager.obtenerVentasDelDia();
 });
+
+// IPC Handler para impresora térmica
+ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
+  try {
+    console.log("🖨️ Solicitud de impresión recibida");
+
+    // TODO: Aquí va la integración con la impresora térmica real
+    // Opciones comunes:
+    //
+    // 1. USB Serial Port (más común):
+    //    const SerialPort = require('serialport');
+    //    const port = new SerialPort('/dev/usb/lp0', { baudRate: 9600 });
+    //    port.write(datosImpresion);
+    //
+    // 2. Librería node-escpos (recomendado):
+    //    const escpos = require('escpos');
+    //    const device = new escpos.USB();
+    //    const printer = new escpos.Printer(device);
+    //    device.open(() => {
+    //      printer.text(datosImpresion).cut().close();
+    //    });
+    //
+    // 3. Librería node-thermal-printer:
+    //    const ThermalPrinter = require('node-thermal-printer').printer;
+    //    const printer = new ThermalPrinter({...});
+    //    printer.println(datosImpresion);
+    //    printer.cut();
+    //    printer.execute();
+
+    // Por ahora, simular éxito
+    console.log("📄 Datos listos para imprimir (impresora no configurada)");
+    console.log("Longitud de datos:", datosImpresion.length, "bytes");
+
+    return { success: true, message: "Impresión simulada (configurar impresora real)" };
+  } catch (error) {
+    console.error("Error al imprimir:", error);
+    return { success: false, error: error.message };
+  }
+});
