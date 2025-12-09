@@ -89,10 +89,16 @@ class ClientDatabase {
       const transaction = this.db.transaction([STORE_NAME], 'readwrite');
       const objectStore = transaction.objectStore(STORE_NAME);
 
+      // Obtener fecha/hora en zona horaria de México
+      const mexicoDate = new Date().toLocaleString("en-US", {
+        timeZone: "America/Mexico_City",
+      });
+      const fechaHoraMexico = new Date(mexicoDate).toISOString();
+
       const ventaConMetadata = {
         ...ventaData,
         sincronizado: false,
-        fecha_hora: new Date().toISOString(),
+        fecha_hora: fechaHoraMexico,
         client_id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       };
 
@@ -185,16 +191,25 @@ class ClientDatabase {
     try {
       // Intentar guardar online primero
       if (this.isOnline && window.electronAPI?.db) {
-        const resultado = await window.electronAPI.db.guardarVenta(ventaData);
+        try {
+          const resultado = await window.electronAPI.db.guardarVenta(ventaData);
 
-        if (resultado.success) {
-          console.log('✅ Venta guardada en Supabase', resultado.folio);
-          return { success: true, mode: 'online', data: resultado.data, folio: resultado.folio };
+          if (resultado.success) {
+            console.log('✅ Venta guardada en Supabase', resultado.folio);
+            return { success: true, mode: 'online', data: resultado.data, folio: resultado.folio };
+          } else {
+            console.warn('⚠️ Supabase retornó error:', resultado.error);
+            console.log('💾 Guardando venta offline como respaldo...');
+          }
+        } catch (errorOnline) {
+          console.warn('⚠️ Error al conectar con Supabase:', errorOnline.message);
+          console.log('💾 Guardando venta offline como respaldo...');
         }
+      } else {
+        console.log('📡 Sin conexión detectada, guardando offline...');
       }
 
       // Si falla o estamos offline, guardar localmente
-      console.log('💾 Guardando venta offline...');
       const ventaLocal = await this.guardarVentaLocal(ventaData);
 
       // Intentar sincronizar después de un segundo
@@ -204,7 +219,7 @@ class ClientDatabase {
 
       return { success: true, mode: 'offline', data: ventaLocal };
     } catch (error) {
-      console.error('Error al guardar venta:', error);
+      console.error('❌ Error crítico al guardar venta:', error);
       throw error;
     }
   }
@@ -221,6 +236,11 @@ class ClientDatabase {
       return { success: false, message: 'Sin conexión' };
     }
 
+    if (!window.electronAPI?.db) {
+      console.error('❌ API de base de datos no disponible');
+      return { success: false, message: 'API de base de datos no disponible' };
+    }
+
     this.isSyncing = true;
     this.notificarCambioEstado({ syncing: true });
 
@@ -228,26 +248,39 @@ class ClientDatabase {
       const ventasPendientes = await this.obtenerVentasPendientes();
 
       if (ventasPendientes.length === 0) {
+        console.log('✅ No hay ventas pendientes de sincronizar');
         this.isSyncing = false;
         this.notificarCambioEstado({ syncing: false });
         return { success: true, sincronizadas: 0 };
       }
 
       console.log(`🔄 Sincronizando ${ventasPendientes.length} ventas...`);
+      console.log('📋 Ventas pendientes:', ventasPendientes.map(v => ({
+        client_id: v.client_id,
+        total: v.total,
+        fecha: v.fecha_hora
+      })));
 
       // Sincronizar todas las ventas
       const resultado = await window.electronAPI.db.sincronizarVentas(ventasPendientes);
+      console.log('📊 Resultado de sincronización:', resultado);
 
       if (resultado.success) {
         // Eliminar las ventas sincronizadas exitosamente
+        console.log(`🗑️ Eliminando ${resultado.detalles.exitosas.length} ventas sincronizadas de IndexedDB...`);
         for (const venta of resultado.detalles.exitosas) {
           const ventaLocal = ventasPendientes.find(v => v.client_id === venta.client_id);
           if (ventaLocal) {
             await this.eliminarVentaLocal(ventaLocal.id);
+            console.log(`✅ Venta eliminada: ${venta.client_id} (Folio: ${venta.folio})`);
           }
         }
 
-        console.log(`✅ Sincronización completada: ${resultado.sincronizadas} exitosas`);
+        if (resultado.detalles.fallidas.length > 0) {
+          console.warn(`⚠️ ${resultado.detalles.fallidas.length} ventas fallaron:`, resultado.detalles.fallidas);
+        }
+
+        console.log(`✅ Sincronización completada: ${resultado.sincronizadas} exitosas, ${resultado.errores} errores`);
 
         this.isSyncing = false;
         this.notificarCambioEstado({
@@ -261,7 +294,7 @@ class ClientDatabase {
         throw new Error(resultado.error);
       }
     } catch (error) {
-      console.error('Error durante sincronización:', error);
+      console.error('❌ Error durante sincronización:', error);
       this.isSyncing = false;
       this.notificarCambioEstado({ syncing: false, error: error.message });
       return { success: false, error: error.message };

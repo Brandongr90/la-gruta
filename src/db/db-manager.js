@@ -52,9 +52,19 @@ class DatabaseManager {
 
       const folio = folioData || 1;
 
+      // Obtener fecha/hora en zona horaria de México si no viene especificada
+      let fechaHora = ventaData.fecha_hora;
+      if (!fechaHora) {
+        const mexicoDate = new Date().toLocaleString("en-US", {
+          timeZone: "America/Mexico_City",
+        });
+        fechaHora = new Date(mexicoDate).toISOString();
+      }
+
       // Preparar datos para insertar
       const ventaParaInsertar = {
         folio: folio,
+        fecha_hora: fechaHora,
         entradas_totales: ventaData.entradas,
         cortesias: ventaData.cortesias,
         entradas_cobradas: ventaData.entradasCobrar,
@@ -67,11 +77,6 @@ class DatabaseManager {
         sincronizado: true,
         client_id: ventaData.client_id || `online-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       };
-
-      // Si viene fecha_hora de sincronización offline, usarla
-      if (ventaData.fecha_hora) {
-        ventaParaInsertar.fecha_hora = ventaData.fecha_hora;
-      }
 
       const { data, error } = await supabase
         .from('ventas')
@@ -94,27 +99,36 @@ class DatabaseManager {
   // Sincronizar múltiples ventas desde el cliente
   async sincronizarVentas(ventas) {
     try {
+      console.log(`📥 Iniciando sincronización de ${ventas.length} ventas en Supabase...`);
+
       const resultados = {
         exitosas: [],
         fallidas: []
       };
 
-      for (const venta of ventas) {
+      for (let i = 0; i < ventas.length; i++) {
+        const venta = ventas[i];
+        console.log(`📝 Procesando venta ${i + 1}/${ventas.length} (client_id: ${venta.client_id})...`);
+
         const resultado = await this.guardarVenta(venta);
 
         if (resultado.success) {
+          console.log(`✅ Venta sincronizada exitosamente - Folio: ${resultado.folio}`);
           resultados.exitosas.push({
             client_id: venta.client_id,
             folio: resultado.folio,
             data: resultado.data
           });
         } else {
+          console.error(`❌ Error al sincronizar venta ${venta.client_id}:`, resultado.error);
           resultados.fallidas.push({
             client_id: venta.client_id,
             error: resultado.error
           });
         }
       }
+
+      console.log(`📊 Sincronización completada: ${resultados.exitosas.length} exitosas, ${resultados.fallidas.length} fallidas`);
 
       return {
         success: true,
@@ -123,7 +137,7 @@ class DatabaseManager {
         detalles: resultados
       };
     } catch (error) {
-      console.error('Error en sincronizarVentas:', error);
+      console.error('❌ Error crítico en sincronizarVentas:', error);
       return { success: false, error: error.message };
     }
   }
@@ -199,13 +213,21 @@ class DatabaseManager {
   // Obtener todas las ventas del día actual
   async obtenerVentasDelDia() {
     try {
-      const hoy = new Date().toISOString().split('T')[0];
+      // Obtener la fecha actual en zona horaria de México
+      const mexicoDate = new Date().toLocaleString("en-US", {
+        timeZone: "America/Mexico_City",
+      });
+      const today = new Date(mexicoDate).toISOString().split("T")[0];
+
+      // Calcular inicio y fin del día en hora de México
+      const startOfDay = `${today}T00:00:00-06:00`;
+      const endOfDay = `${today}T23:59:59-06:00`;
 
       const { data, error } = await supabase
         .from('ventas')
         .select('*')
-        .gte('fecha_hora', `${hoy}T00:00:00`)
-        .lte('fecha_hora', `${hoy}T23:59:59`)
+        .gte('fecha_hora', startOfDay)
+        .lte('fecha_hora', endOfDay)
         .order('fecha_hora', { ascending: false });
 
       if (error) throw error;

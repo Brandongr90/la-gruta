@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Inicializar base de datos
   await inicializarBaseDeDatos();
 
-  cargarDatosGuardados();
+  await cargarDatosGuardados();
   actualizarCalculos();
   configurarNavegacionAutomatica();
 
@@ -625,11 +625,13 @@ async function mostrarCierreVentas() {
   // Fallback a datos locales si no hay conexión o falla Supabase
   if (!datosReporte) {
     console.log('📊 Usando datos locales para el reporte');
+    console.warn('⚠️ Datos locales pueden no reflejar el día completo si la app se reinició');
     datosReporte = {
       total_entradas: ventasDelDia.totalEntradas || 0,
       total_cortesias: ventasDelDia.totalCortesias || 0,
       total_efectivo: ventasDelDia.efectivo || 0,
-      total_terminal1: ventasDelDia.terminal1 || 0
+      total_terminal1: ventasDelDia.terminal1 || 0,
+      total_ventas: 0 // No se puede calcular el total de ventas sin acceso a la BD
     };
   }
 
@@ -730,13 +732,15 @@ async function mostrarReporteCompleto() {
   // Fallback a datos locales si no hay conexión o falla Supabase
   if (!datosReporte) {
     console.log('📈 Usando datos locales para el reporte completo');
+    console.warn('⚠️ Datos locales pueden no reflejar el día completo si la app se reinició');
     datosReporte = {
       total_entradas: ventasDelDia.totalEntradas || 0,
       total_cortesias: ventasDelDia.totalCortesias || 0,
       total_efectivo: ventasDelDia.efectivo || 0,
       total_transferencia: ventasDelDia.transferencia || 0,
       total_terminal1: ventasDelDia.terminal1 || 0,
-      total_terminal2: ventasDelDia.terminal2 || 0
+      total_terminal2: ventasDelDia.terminal2 || 0,
+      total_ventas: 0 // No se puede calcular el total de ventas sin acceso a la BD
     };
   }
 
@@ -940,18 +944,99 @@ async function imprimirReporte() {
 }
 
 function guardarDatos() {
+  // Obtener fecha actual en zona horaria de México
+  const mexicoDate = new Date().toLocaleString("en-US", {
+    timeZone: "America/Mexico_City",
+  });
+  const fechaHoy = new Date(mexicoDate).toISOString().split('T')[0];
+
   localStorage.setItem('ventasDelDia', JSON.stringify(ventasDelDia));
   localStorage.setItem('folioActual', folioActual.toString());
+  localStorage.setItem('ultimaFecha', fechaHoy);
 }
 
-function cargarDatosGuardados() {
+async function cargarDatosGuardados() {
+  // Obtener fecha actual en zona horaria de México
+  const mexicoDate = new Date().toLocaleString("en-US", {
+    timeZone: "America/Mexico_City",
+  });
+  const fechaHoy = new Date(mexicoDate).toISOString().split('T')[0];
+  const ultimaFecha = localStorage.getItem('ultimaFecha');
+
+  // Si es un nuevo día, reiniciar datos locales
+  if (ultimaFecha && ultimaFecha !== fechaHoy) {
+    console.log('🔄 Nuevo día detectado, reiniciando datos locales...');
+    ventasDelDia = {
+      efectivo: 0,
+      transferencia: 0,
+      terminal1: 0,
+      terminal2: 0,
+      totalEntradas: 0,
+      totalCortesias: 0
+    };
+    // No reiniciamos folioActual porque viene del servidor
+    localStorage.setItem('ultimaFecha', fechaHoy);
+    localStorage.setItem('ventasDelDia', JSON.stringify(ventasDelDia));
+    return;
+  }
+
+  // Verificar datos de Supabase si estamos online
+  if (window.electronAPI?.db && navigator.onLine) {
+    try {
+      const resultado = await window.electronAPI.db.obtenerReporteDiaActual();
+
+      // Si Supabase tiene datos, validar contra localStorage
+      if (resultado.success) {
+        if (resultado.data) {
+          // Hay datos en Supabase - usar esos datos como fuente de verdad
+          console.log('📊 Sincronizando con datos de Supabase');
+          ventasDelDia = {
+            efectivo: parseFloat(resultado.data.total_efectivo) || 0,
+            transferencia: parseFloat(resultado.data.total_transferencia) || 0,
+            terminal1: parseFloat(resultado.data.total_terminal1) || 0,
+            terminal2: parseFloat(resultado.data.total_terminal2) || 0,
+            totalEntradas: parseInt(resultado.data.total_entradas) || 0,
+            totalCortesias: parseInt(resultado.data.total_cortesias) || 0
+          };
+          guardarDatos();
+          return;
+        } else {
+          // No hay datos en Supabase para hoy - limpiar localStorage si tiene datos viejos
+          const ventasGuardadas = localStorage.getItem('ventasDelDia');
+          if (ventasGuardadas) {
+            const datosLocales = JSON.parse(ventasGuardadas);
+            const tieneVentasLocales = Object.values(datosLocales).some(val => val > 0);
+
+            if (tieneVentasLocales) {
+              console.log('⚠️ Detectados datos locales sin respaldo en Supabase - limpiando...');
+              ventasDelDia = {
+                efectivo: 0,
+                transferencia: 0,
+                terminal1: 0,
+                terminal2: 0,
+                totalEntradas: 0,
+                totalCortesias: 0
+              };
+              localStorage.setItem('ultimaFecha', fechaHoy);
+              localStorage.setItem('ventasDelDia', JSON.stringify(ventasDelDia));
+              return;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('No se pudo verificar datos en Supabase, usando localStorage:', error);
+    }
+  }
+
+  // Si es el mismo día y no pudimos verificar con Supabase, cargar datos guardados
   const ventasGuardadas = localStorage.getItem('ventasDelDia');
   const folioGuardado = localStorage.getItem('folioActual');
-  
+
   if (ventasGuardadas) {
     ventasDelDia = JSON.parse(ventasGuardadas);
   }
-  
+
   if (folioGuardado) {
     folioActual = parseInt(folioGuardado);
   }
@@ -1247,6 +1332,17 @@ async function inicializarBaseDeDatos() {
       if (pendientes > 0) {
         console.log(`⚠️ Hay ${pendientes} ventas pendientes de sincronizar`);
         mostrarNotificacionSincronizacion(pendientes);
+
+        // Intentar sincronizar automáticamente si estamos online
+        if (navigator.onLine) {
+          console.log('🔄 Iniciando sincronización automática al detectar ventas pendientes...');
+          setTimeout(async () => {
+            const resultado = await window.clientDB.sincronizar();
+            if (resultado.success && resultado.sincronizadas > 0) {
+              console.log(`✅ Sincronización automática completada: ${resultado.sincronizadas} ventas`);
+            }
+          }, 2000); // Esperar 2 segundos para que la app termine de cargar
+        }
       }
 
       // Obtener folio actual desde Supabase si estamos online
