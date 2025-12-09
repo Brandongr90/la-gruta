@@ -479,15 +479,52 @@ function limpiarFormulario() {
   }, 100);
 }
 
-function mostrarCierreVentas() {
-  const cuentaFiscal = ventasDelDia.terminal1 + (ventasDelDia.efectivo * 0.1);
-  const fechaHoy = new Date().toLocaleDateString('es-MX', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
+async function mostrarCierreVentas() {
+  const fechaHoy = new Date().toLocaleDateString('es-MX', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
   });
-  
+
+  // Mostrar loading
+  modalTitle.textContent = '📊 Cierre de Ventas del Día';
+  modalBody.innerHTML = '<div style="text-align: center; padding: 40px;"><p>Cargando reporte desde la base de datos...</p></div>';
+  reportModal.style.display = 'flex';
+
+  let datosReporte = null;
+
+  // Intentar obtener datos desde Supabase
+  if (window.electronAPI?.db && navigator.onLine) {
+    try {
+      const resultado = await window.electronAPI.db.obtenerReporteDiaActual();
+      if (resultado.success && resultado.data) {
+        datosReporte = resultado.data;
+        console.log('📊 Reporte obtenido desde Supabase');
+      }
+    } catch (error) {
+      console.warn('Error al obtener reporte desde Supabase, usando datos locales:', error);
+    }
+  }
+
+  // Fallback a datos locales si no hay conexión o falla Supabase
+  if (!datosReporte) {
+    console.log('📊 Usando datos locales para el reporte');
+    datosReporte = {
+      total_entradas: ventasDelDia.totalEntradas || 0,
+      total_cortesias: ventasDelDia.totalCortesias || 0,
+      total_efectivo: ventasDelDia.efectivo || 0,
+      total_terminal1: ventasDelDia.terminal1 || 0
+    };
+  }
+
+  const terminal1 = parseFloat(datosReporte.total_terminal1) || 0;
+  const efectivo = parseFloat(datosReporte.total_efectivo) || 0;
+  const cuentaFiscal = terminal1 + (efectivo * 0.1);
+  const totalEntradas = parseInt(datosReporte.total_entradas) || 0;
+  const totalCortesias = parseInt(datosReporte.total_cortesias) || 0;
+  const entradasCobradas = totalEntradas - totalCortesias;
+
   const reporte = `
     <div class="report-container">
       <!-- Header del reporte -->
@@ -498,7 +535,7 @@ function mostrarCierreVentas() {
           <p class="report-date">📅 ${fechaHoy}</p>
         </div>
       </div>
-      
+
       <!-- Cuenta Fiscal - Destacada -->
       <div class="report-card fiscal-card">
         <div class="card-header">
@@ -509,13 +546,13 @@ function mostrarCierreVentas() {
           <div class="fiscal-item">
             <div class="fiscal-item-info">
               <span class="fiscal-label">💳 Terminal 1</span>
-              <span class="fiscal-amount">$${ventasDelDia.terminal1.toFixed(2)}</span>
+              <span class="fiscal-amount">$${terminal1.toFixed(2)}</span>
             </div>
           </div>
           <div class="fiscal-item">
             <div class="fiscal-item-info">
-              <span class="fiscal-label">💵 10% Efectivo</span>
-              <span class="fiscal-amount">$${(ventasDelDia.efectivo * 0.1).toFixed(2)}</span>
+              <span class="fiscal-label">💵 Efectivo</span>
+              <span class="fiscal-amount">$${(efectivo * 0.1).toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -527,43 +564,10 @@ function mostrarCierreVentas() {
           </div>
         </div>
       </div>
-      
-      <!-- Resumen de Entradas -->
-      <div class="report-card entries-card">
-        <div class="card-header">
-          <div class="card-icon">🎫</div>
-          <h3>Resumen de Entradas</h3>
-        </div>
-        <div class="entries-stats">
-          <div class="stat-item">
-            <div class="stat-icon">🎟️</div>
-            <div class="stat-info">
-              <span class="stat-label">Total Entradas</span>
-              <span class="stat-value">${ventasDelDia.totalEntradas}</span>
-            </div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-icon">🎁</div>
-            <div class="stat-info">
-              <span class="stat-label">Cortesías</span>
-              <span class="stat-value">${ventasDelDia.totalCortesias}</span>
-            </div>
-          </div>
-          <div class="stat-item highlight">
-            <div class="stat-icon">💰</div>
-            <div class="stat-info">
-              <span class="stat-label">Entradas Cobradas</span>
-              <span class="stat-value">${ventasDelDia.totalEntradas - ventasDelDia.totalCortesias}</span>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   `;
-  
-  modalTitle.textContent = '📊 Cierre de Ventas del Día';
+
   modalBody.innerHTML = reporte;
-  reportModal.style.display = 'flex';
 }
 
 function mostrarBotonReporteCompleto() {
@@ -578,21 +582,62 @@ function mostrarBotonReporteCompleto() {
   }, 5000);
 }
 
-function mostrarReporteCompleto() {
-  const totalGeneral = ventasDelDia.efectivo + ventasDelDia.transferencia + ventasDelDia.terminal1 + ventasDelDia.terminal2;
-  const cuentaFiscal = ventasDelDia.terminal1 + (ventasDelDia.efectivo * 0.1);
-  const fechaHoy = new Date().toLocaleDateString('es-MX', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
+async function mostrarReporteCompleto() {
+  const fechaHoy = new Date().toLocaleDateString('es-MX', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
   });
-  
+
+  // Mostrar loading
+  modalTitle.textContent = '📈 Reporte Completo del Día';
+  modalBody.innerHTML = '<div style="text-align: center; padding: 40px;"><p>Cargando reporte completo desde la base de datos...</p></div>';
+  reportModal.style.display = 'flex';
+
+  let datosReporte = null;
+
+  // Intentar obtener datos desde Supabase
+  if (window.electronAPI?.db && navigator.onLine) {
+    try {
+      const resultado = await window.electronAPI.db.obtenerReporteDiaActual();
+      if (resultado.success && resultado.data) {
+        datosReporte = resultado.data;
+        console.log('📈 Reporte completo obtenido desde Supabase');
+      }
+    } catch (error) {
+      console.warn('Error al obtener reporte desde Supabase, usando datos locales:', error);
+    }
+  }
+
+  // Fallback a datos locales si no hay conexión o falla Supabase
+  if (!datosReporte) {
+    console.log('📈 Usando datos locales para el reporte completo');
+    datosReporte = {
+      total_entradas: ventasDelDia.totalEntradas || 0,
+      total_cortesias: ventasDelDia.totalCortesias || 0,
+      total_efectivo: ventasDelDia.efectivo || 0,
+      total_transferencia: ventasDelDia.transferencia || 0,
+      total_terminal1: ventasDelDia.terminal1 || 0,
+      total_terminal2: ventasDelDia.terminal2 || 0
+    };
+  }
+
+  const efectivo = parseFloat(datosReporte.total_efectivo) || 0;
+  const transferencia = parseFloat(datosReporte.total_transferencia) || 0;
+  const terminal1 = parseFloat(datosReporte.total_terminal1) || 0;
+  const terminal2 = parseFloat(datosReporte.total_terminal2) || 0;
+  const totalGeneral = efectivo + transferencia + terminal1 + terminal2;
+  const cuentaFiscal = terminal1 + (efectivo * 0.1);
+  const totalEntradas = parseInt(datosReporte.total_entradas) || 0;
+  const totalCortesias = parseInt(datosReporte.total_cortesias) || 0;
+  const entradasCobradas = totalEntradas - totalCortesias;
+
   // Calcular porcentajes para gráfico visual
-  const porcentajeEfectivo = totalGeneral > 0 ? (ventasDelDia.efectivo / totalGeneral * 100) : 0;
-  const porcentajeTransferencia = totalGeneral > 0 ? (ventasDelDia.transferencia / totalGeneral * 100) : 0;
-  const porcentajeTerminal1 = totalGeneral > 0 ? (ventasDelDia.terminal1 / totalGeneral * 100) : 0;
-  const porcentajeTerminal2 = totalGeneral > 0 ? (ventasDelDia.terminal2 / totalGeneral * 100) : 0;
+  const porcentajeEfectivo = totalGeneral > 0 ? (efectivo / totalGeneral * 100) : 0;
+  const porcentajeTransferencia = totalGeneral > 0 ? (transferencia / totalGeneral * 100) : 0;
+  const porcentajeTerminal1 = totalGeneral > 0 ? (terminal1 / totalGeneral * 100) : 0;
+  const porcentajeTerminal2 = totalGeneral > 0 ? (terminal2 / totalGeneral * 100) : 0;
   
   const reporte = `
     <div class="report-container">
@@ -618,7 +663,7 @@ function mostrarReporteCompleto() {
           <div class="summary-icon">🎫</div>
           <div class="summary-info">
             <span class="summary-label">Entradas Vendidas</span>
-            <span class="summary-value">${ventasDelDia.totalEntradas - ventasDelDia.totalCortesias}</span>
+            <span class="summary-value">${entradasCobradas}</span>
           </div>
         </div>
         <div class="summary-item">
@@ -643,7 +688,7 @@ function mostrarReporteCompleto() {
               <span class="payment-label">Efectivo</span>
             </div>
             <div class="payment-amount">
-              <span class="amount">$${ventasDelDia.efectivo.toFixed(2)}</span>
+              <span class="amount">$${efectivo.toFixed(2)}</span>
               <div class="progress-bar">
                 <div class="progress-fill efectivo" style="width: ${porcentajeEfectivo}%"></div>
               </div>
@@ -656,7 +701,7 @@ function mostrarReporteCompleto() {
               <span class="payment-label">Transferencia</span>
             </div>
             <div class="payment-amount">
-              <span class="amount">$${ventasDelDia.transferencia.toFixed(2)}</span>
+              <span class="amount">$${transferencia.toFixed(2)}</span>
               <div class="progress-bar">
                 <div class="progress-fill transferencia" style="width: ${porcentajeTransferencia}%"></div>
               </div>
@@ -669,7 +714,7 @@ function mostrarReporteCompleto() {
               <span class="payment-label">Terminal 1</span>
             </div>
             <div class="payment-amount">
-              <span class="amount">$${ventasDelDia.terminal1.toFixed(2)}</span>
+              <span class="amount">$${terminal1.toFixed(2)}</span>
               <div class="progress-bar">
                 <div class="progress-fill terminal1" style="width: ${porcentajeTerminal1}%"></div>
               </div>
@@ -682,7 +727,7 @@ function mostrarReporteCompleto() {
               <span class="payment-label">Terminal 2</span>
             </div>
             <div class="payment-amount">
-              <span class="amount">$${ventasDelDia.terminal2.toFixed(2)}</span>
+              <span class="amount">$${terminal2.toFixed(2)}</span>
               <div class="progress-bar">
                 <div class="progress-fill terminal2" style="width: ${porcentajeTerminal2}%"></div>
               </div>
@@ -711,13 +756,13 @@ function mostrarReporteCompleto() {
             <div class="fiscal-item">
               <div class="fiscal-item-info">
                 <span class="fiscal-label">💳 Terminal 1</span>
-                <span class="fiscal-amount">$${ventasDelDia.terminal1.toFixed(2)}</span>
+                <span class="fiscal-amount">$${terminal1.toFixed(2)}</span>
               </div>
             </div>
             <div class="fiscal-item">
               <div class="fiscal-item-info">
-                <span class="fiscal-label">💵 10% Efectivo</span>
-                <span class="fiscal-amount">$${(ventasDelDia.efectivo * 0.1).toFixed(2)}</span>
+                <span class="fiscal-label">💵 Efectivo</span>
+                <span class="fiscal-amount">$${(efectivo * 0.1).toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -729,7 +774,7 @@ function mostrarReporteCompleto() {
             </div>
           </div>
         </div>
-        
+
         <!-- Estadísticas de Entradas -->
         <div class="report-card entries-card">
           <div class="card-header">
@@ -741,21 +786,21 @@ function mostrarReporteCompleto() {
               <div class="stat-icon">🎟️</div>
               <div class="stat-info">
                 <span class="stat-label">Total Entradas</span>
-                <span class="stat-value">${ventasDelDia.totalEntradas}</span>
+                <span class="stat-value">${totalEntradas}</span>
               </div>
             </div>
             <div class="stat-item">
               <div class="stat-icon">🎁</div>
               <div class="stat-info">
                 <span class="stat-label">Cortesías</span>
-                <span class="stat-value">${ventasDelDia.totalCortesias}</span>
+                <span class="stat-value">${totalCortesias}</span>
               </div>
             </div>
             <div class="stat-item highlight">
               <div class="stat-icon">💰</div>
               <div class="stat-info">
                 <span class="stat-label">Entradas Cobradas</span>
-                <span class="stat-value">${ventasDelDia.totalEntradas - ventasDelDia.totalCortesias}</span>
+                <span class="stat-value">${entradasCobradas}</span>
               </div>
             </div>
           </div>
