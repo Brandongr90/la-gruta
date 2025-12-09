@@ -6,10 +6,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
   sendMessage: (message) => ipcRenderer.invoke("send-message", message),
 
   // Escuchar eventos del proceso principal
-  onUpdateAvailable: (callback) => ipcRenderer.on("update-available", callback),
+  onUpdateAvailable: (callback) => ipcRenderer.on("update-available", (event, info) => callback(info)),
+  onDownloadProgress: (callback) => ipcRenderer.on("download-progress", (event, progress) => callback(progress)),
+  onUpdateDownloaded: (callback) => ipcRenderer.on("update-downloaded", (event, info) => callback(info)),
 
   // Obtener información del sistema
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
+
+  // APIs de actualización
+  app: {
+    checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
+    installUpdate: () => ipcRenderer.invoke("app:install-update"),
+  },
 
   // APIs de base de datos
   db: {

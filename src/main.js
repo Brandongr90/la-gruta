@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, ipcMain } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const { dbManager } = require("./db/db-manager");
 
@@ -45,8 +46,67 @@ function createWindow() {
   });
 }
 
+// Configuración de auto-updater
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+
+// Logs del auto-updater
+autoUpdater.logger = require("electron-log");
+autoUpdater.logger.transports.file.level = "info";
+
+// Eventos del auto-updater
+autoUpdater.on("checking-for-update", () => {
+  console.log("🔍 Verificando actualizaciones...");
+});
+
+autoUpdater.on("update-available", (info) => {
+  console.log("✅ Actualización disponible:", info.version);
+  if (mainWindow) {
+    mainWindow.webContents.send("update-available", info);
+  }
+});
+
+autoUpdater.on("update-not-available", (info) => {
+  console.log("✅ La aplicación está actualizada");
+});
+
+autoUpdater.on("error", (err) => {
+  console.error("❌ Error en auto-updater:", err);
+});
+
+autoUpdater.on("download-progress", (progressObj) => {
+  const logMessage = `📥 Descargando: ${progressObj.percent.toFixed(2)}%`;
+  console.log(logMessage);
+  if (mainWindow) {
+    mainWindow.webContents.send("download-progress", progressObj);
+  }
+});
+
+autoUpdater.on("update-downloaded", (info) => {
+  console.log("✅ Actualización descargada - Se instalará al cerrar la app");
+  if (mainWindow) {
+    mainWindow.webContents.send("update-downloaded", info);
+  }
+});
+
 // Este método será llamado cuando Electron termine de inicializar
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+
+  // Verificar actualizaciones después de 3 segundos (para dar tiempo a que cargue la app)
+  setTimeout(() => {
+    if (process.env.NODE_ENV !== "development") {
+      autoUpdater.checkForUpdatesAndNotify();
+    }
+  }, 3000);
+
+  // Verificar actualizaciones cada 2 horas
+  setInterval(() => {
+    if (process.env.NODE_ENV !== "development") {
+      autoUpdater.checkForUpdatesAndNotify();
+    }
+  }, 2 * 60 * 60 * 1000);
+});
 
 // Salir cuando todas las ventanas estén cerradas
 app.on("window-all-closed", () => {
@@ -135,6 +195,18 @@ ipcMain.handle("db:obtener-reportes-mensual", async (event, limite) => {
 
 ipcMain.handle("db:obtener-ventas-del-dia", async () => {
   return await dbManager.obtenerVentasDelDia();
+});
+
+// IPC Handler para actualizaciones
+ipcMain.handle("app:check-for-updates", async () => {
+  if (process.env.NODE_ENV !== "development") {
+    return await autoUpdater.checkForUpdates();
+  }
+  return { updateInfo: null };
+});
+
+ipcMain.handle("app:install-update", () => {
+  autoUpdater.quitAndInstall();
 });
 
 // IPC Handler para impresora térmica
