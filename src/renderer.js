@@ -14,13 +14,13 @@ let dbInicializada = false;
 let tipoReporteActual = null; // 'publico' o 'privado'
 
 // Constantes
-const PRECIO_ENTRADA = 300;
+const PRECIO_ENTRADA = 350;
 
 // Configuración de Impresora Térmica
 const CONFIG_IMPRESORA = {
   ANCHO_TICKET_MM: 80,  // Ancho del ticket en milímetros
   CARACTERES_POR_LINEA: 32,  // Aproximadamente para 80mm
-  USAR_IMPRESORA: false  // Cambiar a true cuando esté conectada la impresora
+  USAR_IMPRESORA: true  // Impresora EPSON TM-T20II (M267D) activada
 };
 
 // Comandos ESC/POS para Impresoras Térmicas
@@ -265,17 +265,9 @@ function configurarNavegacionAutomatica() {
   cortesiasSelect.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const selectedPayment = document.querySelector('input[name="payment"]:checked')?.value;
-      
-      if (selectedPayment === 'efectivo') {
-        // Si es efectivo, ir al campo de efectivo recibido
-        efectivoRecibidoInput.focus();
-        efectivoRecibidoInput.select();
-      } else {
-        // Si es tarjeta o transferencia, intentar imprimir si está habilitado
-        if (!imprimirBoletoBtn.disabled) {
-          imprimirBoletoBtn.click();
-        }
+      // Para cualquier forma de pago, intentar imprimir si está habilitado
+      if (!imprimirBoletoBtn.disabled) {
+        imprimirBoletoBtn.click();
       }
     }
   });
@@ -336,18 +328,15 @@ function actualizarBotonImprimir() {
   const selectedPayment = document.querySelector('input[name="payment"]:checked')?.value;
   const selectedTerminal = document.querySelector('input[name="terminal"]:checked')?.value;
   const total = parseFloat(totalSpan.textContent.replace('$', ''));
-  const efectivoRecibido = parseFloat(efectivoRecibidoInput.value) || 0;
-  
+
   let canPrint = entradas > 0 && total >= 0 && selectedPayment;
-  
+
   if (selectedPayment === 'tarjeta') {
     canPrint = canPrint && selectedTerminal;
   }
-  
-  if (selectedPayment === 'efectivo' && total > 0) {
-    canPrint = canPrint && efectivoRecibido >= total;
-  }
-  
+
+  // Ya no se requiere validar efectivo recibido para pagos en efectivo
+
   imprimirBoletoBtn.disabled = !canPrint;
 }
 
@@ -388,8 +377,8 @@ async function imprimirBoleto() {
     total,
     formaPago: selectedPayment,
     terminal: selectedTerminal,
-    efectivoRecibido: selectedPayment === 'efectivo' ? efectivoRecibido : null,
-    cambio: selectedPayment === 'efectivo' ? efectivoRecibido - total : null
+    efectivoRecibido: null,  // Funcionalidad de efectivo recibido desactivada
+    cambio: null  // Funcionalidad de cambio desactivada
   };
 
   // Guardar en la base de datos (online o offline)
@@ -430,8 +419,8 @@ async function imprimirBoleto() {
       // Solo mostrar info de pago en el primer ticket
       mostrarPago: i === 0,
       totalVenta: total,
-      efectivoRecibido: selectedPayment === 'efectivo' ? efectivoRecibido : null,
-      cambio: selectedPayment === 'efectivo' ? efectivoRecibido - total : null
+      efectivoRecibido: null,  // Funcionalidad desactivada
+      cambio: null  // Funcionalidad desactivada
     });
 
     // Imprimir ticket
@@ -1141,9 +1130,23 @@ ${fechaSolo}
 
   console.log(ticket);
 
-  if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
-    // TODO: Aquí iría la integración con la impresora térmica
-    console.log('📄 Enviando a impresora térmica...');
+  // Imprimir en impresora térmica
+  if (CONFIG_IMPRESORA.USAR_IMPRESORA && window.electronAPI?.imprimirTicket) {
+    try {
+      console.log('📄 Enviando reporte a impresora térmica...');
+      const resultado = await window.electronAPI.imprimirTicket(ticket);
+
+      if (resultado.success) {
+        console.log('✅ Reporte fiscal impreso correctamente');
+        alert('Reporte fiscal impreso correctamente');
+      } else {
+        console.error('❌ Error al imprimir reporte:', resultado.error);
+        alert(`Error al imprimir reporte: ${resultado.error}`);
+      }
+    } catch (error) {
+      console.error('❌ Error al imprimir reporte:', error);
+      alert(`Error al imprimir reporte: ${error.message}`);
+    }
   } else {
     console.log('📋 Impresión en consola (impresora no configurada)');
   }
@@ -1303,9 +1306,23 @@ ${fechaSolo}
 
   console.log(ticket);
 
-  if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
-    // TODO: Aquí iría la integración con la impresora térmica
-    console.log('📄 Enviando a impresora térmica...');
+  // Imprimir en impresora térmica
+  if (CONFIG_IMPRESORA.USAR_IMPRESORA && window.electronAPI?.imprimirTicket) {
+    try {
+      console.log('📄 Enviando reporte completo a impresora térmica...');
+      const resultado = await window.electronAPI.imprimirTicket(ticket);
+
+      if (resultado.success) {
+        console.log('✅ Reporte completo impreso correctamente');
+        alert('Reporte completo impreso correctamente');
+      } else {
+        console.error('❌ Error al imprimir reporte:', resultado.error);
+        alert(`Error al imprimir reporte: ${resultado.error}`);
+      }
+    } catch (error) {
+      console.error('❌ Error al imprimir reporte:', error);
+      alert(`Error al imprimir reporte: ${error.message}`);
+    }
   } else {
     console.log('📋 Impresión en consola (impresora no configurada)');
   }

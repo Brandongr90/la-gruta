@@ -103,7 +103,7 @@ class SyncManager {
         monto_total: ventaData.total,
         efectivo_recibido: ventaData.efectivoRecibido || null,
         cambio: ventaData.cambio || null,
-        precio_unitario: 300,
+        precio_unitario: 350,
         sincronizado: true,
         client_id: `online-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       };
@@ -174,7 +174,7 @@ class SyncManager {
             monto_total: venta.total,
             efectivo_recibido: venta.efectivoRecibido || null,
             cambio: venta.cambio || null,
-            precio_unitario: 300,
+            precio_unitario: 350,
             sincronizado: true,
             client_id: venta.client_id,
             fecha_hora: venta.fecha_hora

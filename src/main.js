@@ -24,7 +24,7 @@ function createWindow() {
     icon: path.join(__dirname, "../assets/icon.png"),
     show: false, // No mostrar hasta que esté lista
     center: true,
-    titleBarStyle: 'default'
+    titleBarStyle: "default",
   });
 
   // Cargar el archivo HTML
@@ -209,41 +209,204 @@ ipcMain.handle("app:install-update", () => {
   autoUpdater.quitAndInstall();
 });
 
-// IPC Handler para impresora térmica
+// IPC Handler para impresora térmica - Impresión directa con Electron
 ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
+  // Función helper para enviar logs al renderer
+  const sendLog = (message, type = 'log') => {
+    console[type](message);
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.executeJavaScript(`console.${type}("${message.replace(/"/g, '\\"')}")`);
+    }
+  };
+
   try {
-    console.log("🖨️ Solicitud de impresión recibida");
+    sendLog("🖨️ Iniciando impresión directa a impresora térmica");
+    sendLog(`📄 Longitud de datos: ${datosImpresion.length} bytes`);
 
-    // TODO: Aquí va la integración con la impresora térmica real
-    // Opciones comunes:
-    //
-    // 1. USB Serial Port (más común):
-    //    const SerialPort = require('serialport');
-    //    const port = new SerialPort('/dev/usb/lp0', { baudRate: 9600 });
-    //    port.write(datosImpresion);
-    //
-    // 2. Librería node-escpos (recomendado):
-    //    const escpos = require('escpos');
-    //    const device = new escpos.USB();
-    //    const printer = new escpos.Printer(device);
-    //    device.open(() => {
-    //      printer.text(datosImpresion).cut().close();
-    //    });
-    //
-    // 3. Librería node-thermal-printer:
-    //    const ThermalPrinter = require('node-thermal-printer').printer;
-    //    const printer = new ThermalPrinter({...});
-    //    printer.println(datosImpresion);
-    //    printer.cut();
-    //    printer.execute();
+    // Nombre exacto de la impresora en Windows
+    const printerName = "EPSON TM-T20III Receipt";
+    sendLog(`🔍 Impresora destino: ${printerName}`);
 
-    // Por ahora, simular éxito
-    console.log("📄 Datos listos para imprimir (impresora no configurada)");
-    console.log("Longitud de datos:", datosImpresion.length, "bytes");
+    // Obtener lista de impresoras disponibles para verificar
+    try {
+      const printers = await mainWindow.webContents.getPrintersAsync();
+      sendLog(`   📋 Impresoras disponibles: ${printers.length}`);
 
-    return { success: true, message: "Impresión simulada (configurar impresora real)" };
+      const targetPrinter = printers.find(p => p.name === printerName);
+      if (targetPrinter) {
+        sendLog(`   ✅ Impresora encontrada: ${targetPrinter.name}`);
+        sendLog(`      Estado: ${targetPrinter.status === 0 ? 'Lista' : 'Ocupada/Error'}`);
+        sendLog(`      Es predeterminada: ${targetPrinter.isDefault ? 'Sí' : 'No'}`);
+      } else {
+        sendLog(`   ⚠️ ADVERTENCIA: No se encontró la impresora "${printerName}"`, 'warn');
+        sendLog(`   Impresoras disponibles:`, 'warn');
+        printers.forEach(p => sendLog(`      - ${p.name}`, 'warn'));
+      }
+    } catch (getPrintersError) {
+      sendLog(`   ⚠️ No se pudo obtener lista de impresoras: ${getPrintersError.message}`, 'warn');
+    }
+
+    // Crear una ventana invisible para renderizar el contenido
+    sendLog("   1. Creando ventana de impresión...");
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    // Capturar errores de la ventana de impresión
+    printWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      sendLog(`   ⚠️ Error al cargar contenido: ${errorCode} - ${errorDescription}`, 'warn');
+    });
+
+    printWindow.webContents.on('render-process-gone', (event, details) => {
+      sendLog(`   ⚠️ Proceso de renderizado terminado: ${details.reason}`, 'warn');
+    });
+
+    // Convertir el contenido del ticket a HTML
+    // Escapar caracteres especiales para HTML
+    const contenidoEscapado = datosImpresion
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br>');
+
+    // Agregar líneas en blanco al final para espacio antes del corte
+    const contenidoFinal = contenidoEscapado + '<br><br><br>';
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          @page {
+            size: 80mm auto;
+            margin: 2mm 5mm;
+          }
+          @media print {
+            body {
+              margin: 0;
+              padding: 0;
+            }
+          }
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 10px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.3;
+            width: 72mm;
+          }
+        </style>
+      </head>
+      <body>${contenidoFinal}</body>
+      </html>
+    `;
+
+    sendLog("   2. Cargando contenido en ventana...");
+
+    // Cargar el contenido y esperar a que esté listo
+    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
+
+    sendLog("   2.1. Contenido cargado, esperando renderizado...");
+
+    // Esperar a que termine de cargar y renderizar completamente
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    sendLog("   3. Enviando a impresora (impresión silenciosa)...");
+
+    // Configuración de impresión para impresora térmica de 80mm
+    const printOptions = {
+      silent: true, // Imprimir sin mostrar el diálogo
+      printBackground: false,
+      deviceName: printerName, // Nombre exacto de la impresora
+      color: false, // Impresión en blanco y negro
+      margins: {
+        marginType: 'custom',
+        top: 0,
+        bottom: 0,
+        left: 2,
+        right: 2
+      },
+      landscape: false,
+      scaleFactor: 100,
+      pagesPerSheet: 1,
+      collate: false,
+      copies: 1,
+      pageSize: {
+        height: 297000, // Altura automática (A4 height en micrómetros como fallback)
+        width: 80000    // 80mm en micrómetros
+      },
+      dpi: {
+        horizontal: 203,
+        vertical: 203
+      }
+    };
+
+    sendLog("   4. Llamando a webContents.print()...");
+
+    // Retornar una promesa que se resuelva cuando termine la impresión
+    return new Promise((resolve) => {
+      try {
+        printWindow.webContents.print(printOptions, (success, failureReason) => {
+          sendLog(`   5. Callback de impresión ejecutado - Success: ${success}, Reason: ${failureReason || 'ninguno'}`);
+
+          // Esperar un momento antes de cerrar la ventana
+          setTimeout(() => {
+            if (printWindow && !printWindow.isDestroyed()) {
+              printWindow.close();
+              sendLog("   6. Ventana de impresión cerrada");
+            }
+          }, 500);
+
+          if (success) {
+            sendLog("✅ Ticket enviado a la impresora correctamente");
+            sendLog("   El ticket debería imprimirse y cortarse automáticamente");
+            resolve({
+              success: true,
+              message: "Ticket impreso correctamente"
+            });
+          } else {
+            sendLog(`❌ Error al imprimir: ${failureReason}`, 'error');
+
+            // Mensajes de ayuda según el error
+            if (failureReason === 'Failed to print') {
+              sendLog("   Verifica que la impresora esté encendida y conectada", 'warn');
+              sendLog("   Verifica que el nombre de la impresora sea exactamente: " + printerName, 'warn');
+            }
+
+            resolve({
+              success: false,
+              error: `Error al imprimir: ${failureReason}`,
+              help: "Verifica que la impresora esté encendida, conectada y con el nombre correcto en Windows"
+            });
+          }
+        });
+        sendLog("   4.1. print() llamado, esperando respuesta...");
+      } catch (printError) {
+        sendLog(`❌ Excepción al llamar print(): ${printError.message}`, 'error');
+        if (printWindow && !printWindow.isDestroyed()) {
+          printWindow.close();
+        }
+        resolve({
+          success: false,
+          error: `Excepción al imprimir: ${printError.message}`
+        });
+      }
+    });
+
   } catch (error) {
-    console.error("Error al imprimir:", error);
-    return { success: false, error: error.message };
+    sendLog(`❌ Error general: ${error.message}`, 'error');
+    sendLog(`   Stack: ${error.stack || "No hay stack trace"}`, 'error');
+    return {
+      success: false,
+      error: error.message || "Error desconocido al imprimir",
+      details: error.stack || "No hay detalles adicionales"
+    };
   }
 });

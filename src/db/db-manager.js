@@ -73,7 +73,7 @@ class DatabaseManager {
         monto_total: ventaData.total,
         efectivo_recibido: ventaData.efectivoRecibido || null,
         cambio: ventaData.cambio || null,
-        precio_unitario: 300,
+        precio_unitario: 350,
         sincronizado: true,
         client_id: ventaData.client_id || `online-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       };
