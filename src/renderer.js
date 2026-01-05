@@ -83,6 +83,12 @@ const printReportBtn = document.getElementById('printReport');
 const printingModal = document.getElementById('printingModal');
 const printingTitle = document.getElementById('printingTitle');
 const printingProgress = document.getElementById('printingProgress');
+const fiscalModal = document.getElementById('fiscalModal');
+const closeFiscalModal = document.getElementById('closeFiscalModal');
+const entradasFiscalesInput = document.getElementById('entradasFiscalesInput');
+const fiscalPreview = document.getElementById('fiscalPreview');
+const fiscalPreviewAmount = document.getElementById('fiscalPreviewAmount');
+const saveFiscalEntriesBtn = document.getElementById('saveFiscalEntries');
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', async () => {
@@ -102,6 +108,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     logoImage.style.cursor = 'pointer';
   }
 
+  // Acceso oculto mediante click en "Datos del Boleto" (sin cambiar cursor)
+  const datosBoletoHeader = document.getElementById('datosBoletoHeader');
+  if (datosBoletoHeader) {
+    datosBoletoHeader.addEventListener('click', abrirModalEntradrasFiscales);
+    // NO cambiar el cursor para mantenerlo oculto
+  }
+
   // Sistema de atajos de teclado
   document.addEventListener('keydown', (e) => {
     // Activar botón oculto para reporte completo (combinación de teclas Ctrl+Shift+R)
@@ -109,7 +122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       mostrarBotonReporteCompleto();
       return;
     }
-    
+
     // No procesar atajos si estamos escribiendo en inputs de texto o selects
     const activeElement = document.activeElement;
     if (activeElement.tagName === 'INPUT' && activeElement.type !== 'radio') {
@@ -224,6 +237,22 @@ window.addEventListener('click', (e) => {
   if (e.target === reportModal) {
     reportModal.style.display = 'none';
   }
+  if (e.target === fiscalModal) {
+    fiscalModal.style.display = 'none';
+  }
+});
+
+// Event listeners para modal de entradas fiscales
+closeFiscalModal.addEventListener('click', () => {
+  fiscalModal.style.display = 'none';
+});
+
+entradasFiscalesInput.addEventListener('input', () => {
+  actualizarPreviewFiscal();
+});
+
+saveFiscalEntriesBtn.addEventListener('click', () => {
+  guardarEntradasFiscales();
 });
 
 // Sistema de atajos de teclado
@@ -546,54 +575,45 @@ async function imprimirBoleto() {
 function generarTicketIndividual(datos) {
   const fecha = new Date().toLocaleString('es-MX');
 
-  let ticket = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-           LA GRUTA
-       Balneario y Spa
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-FOLIO: ${datos.folio.toString().padStart(6, '0')}
+  let ticket = `      LA GRUTA SPA
+CARR. SAN MIGUEL-DOLORES KM 10
 FECHA: ${fecha}
-
-ENTRADA ${datos.numEntrada} de ${datos.totalEntradas}
-
-${datos.esCortesia ? '*** CORTESÍA ***' : `PRECIO: $${datos.precioPorEntrada.toFixed(2)}`}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+---------------------------------------
+ENTRADA GENERAL $ ${datos.precioPorEntrada.toFixed(2)} FOLIO ${datos.folio.toString().padStart(4, '0')}
+---------------------------------------`;
 
   // Solo mostrar información de pago en el primer ticket Y si no es cortesía
   if (datos.mostrarPago && !datos.esCortesia) {
     ticket += `
+PAGO: ${datos.formaPago.toUpperCase()}${datos.terminal ? ` (${datos.terminal.toUpperCase()})` : ''}
+TOTAL VENTA: $${datos.totalVenta.toFixed(2)}`;
+    if (datos.efectivoRecibido !== null) {
+      ticket += `
+EFECTIVO: $${datos.efectivoRecibido.toFixed(2)} CAMBIO: $${datos.cambio.toFixed(2)}`;
+    }
+    ticket += `
+---------------------------------------`;
+  }
 
-INFORMACIÓN DE PAGO:
-
-FORMA DE PAGO: ${datos.formaPago.toUpperCase()}${datos.terminal ? ` (${datos.terminal.toUpperCase()})` : ''}
-TOTAL VENTA: $${datos.totalVenta.toFixed(2)}
-${datos.efectivoRecibido !== null ? `EFECTIVO RECIBIDO: $${datos.efectivoRecibido.toFixed(2)}
-CAMBIO: $${datos.cambio.toFixed(2)}` : ''}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  if (datos.esCortesia) {
+    ticket += `
+*** CORTESÍA ***
+---------------------------------------`;
   }
 
   ticket += `
+ENTRADA ${datos.numEntrada} de ${datos.totalEntradas}
 
-PROHIBIDA LA ENTRADA DE:
-• Alimentos
-• Bebidas
-• Mascotas
+PROHIBIDA ENTRADA: ALIMENTOS, BEBIDAS
+Y MASCOTAS
 USO EXCLUSIVO DE TRAJE DE BAÑO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-www.lagruta-spa.com.mx
-Tel. 4151852162
-
-Gracias por tu visita!
-
-No válido como comprobante fiscal
-Una vez pagado no hay devoluciones
-Solicitar factura en el momento
-de la compra
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+       www.lagruta-spa.com.mx
+       GRACIAS POR TU VISITA!!
+NO VALIDO COMO COMPROBANTE FISCAL
+UNA VEZ PAGADO NO HAY DEVOLUCIONES
+       TEL. 4151852162
+SOLICITAR FACTURA EL DIA DE TU VISITA
+---------------------------------------`;
 
   return ticket;
 }
@@ -714,10 +734,9 @@ async function mostrarCierreVentas() {
   const transferencia = parseFloat(datosReporte.total_transferencia) || 0;
   const efectivo = parseFloat(datosReporte.total_efectivo) || 0;
 
-  // Calcular 10% basado en número de entradas, no en monto
-  const entradasEfectivo = efectivo / PRECIO_ENTRADA;
-  const entradas10Porciento = Math.floor(entradasEfectivo * 0.1);
-  const montoEfectivo = entradas10Porciento * PRECIO_ENTRADA;
+  // Obtener entradas fiscales configuradas manualmente
+  const entradasFiscales = obtenerEntradasFiscales();
+  const montoEfectivo = entradasFiscales * PRECIO_ENTRADA;
 
   const cuentaFiscal = terminal1 + transferencia + montoEfectivo;
   const totalEntradas = parseInt(datosReporte.total_entradas) || 0;
@@ -756,8 +775,8 @@ async function mostrarCierreVentas() {
           </div>
           <div class="fiscal-item">
             <div class="fiscal-item-info">
-              <span class="fiscal-label">💵 Efectivo (10% de entradas)</span>
-              <span class="fiscal-amount">${entradas10Porciento} entrada${entradas10Porciento !== 1 ? 's' : ''} - $${montoEfectivo.toFixed(2)}</span>
+              <span class="fiscal-label">💵 Efectivo</span>
+              <span class="fiscal-amount">$${montoEfectivo.toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -838,10 +857,9 @@ async function mostrarReporteCompleto() {
   const terminal2 = parseFloat(datosReporte.total_terminal2) || 0;
   const totalGeneral = efectivo + transferencia + terminal1 + terminal2;
 
-  // Calcular 10% basado en número de entradas, no en monto
-  const entradasEfectivo = efectivo / PRECIO_ENTRADA;
-  const entradas10Porciento = Math.floor(entradasEfectivo * 0.1);
-  const montoEfectivo = entradas10Porciento * PRECIO_ENTRADA;
+  // Obtener entradas fiscales configuradas manualmente
+  const entradasFiscales = obtenerEntradasFiscales();
+  const montoEfectivo = entradasFiscales * PRECIO_ENTRADA;
 
   const cuentaFiscal = terminal1 + transferencia + montoEfectivo;
   const totalEntradas = parseInt(datosReporte.total_entradas) || 0;
@@ -982,8 +1000,8 @@ async function mostrarReporteCompleto() {
             </div>
             <div class="fiscal-item">
               <div class="fiscal-item-info">
-                <span class="fiscal-label">💵 Efectivo (10% entradas)</span>
-                <span class="fiscal-amount">${entradas10Porciento} entrada${entradas10Porciento !== 1 ? 's' : ''} - $${montoEfectivo.toFixed(2)}</span>
+                <span class="fiscal-label">💵 Efectivo</span>
+                <span class="fiscal-amount">${entradasFiscales} entrada${entradasFiscales !== 1 ? 's' : ''} - $${montoEfectivo.toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -1033,6 +1051,111 @@ async function mostrarReporteCompleto() {
   modalTitle.textContent = '📈 Reporte Completo del Día';
   modalBody.innerHTML = reporte;
   reportModal.style.display = 'flex';
+}
+
+// ============================================
+// Funciones de Entradas Fiscales Manuales
+// ============================================
+
+function abrirModalEntradrasFiscales() {
+  // Cargar el valor actual si existe
+  const entradasFiscales = obtenerEntradasFiscales();
+  entradasFiscalesInput.value = entradasFiscales || 0;
+
+  // Actualizar preview
+  actualizarPreviewFiscal();
+
+  // Mostrar modal
+  fiscalModal.style.display = 'flex';
+
+  // Focus en el input
+  setTimeout(() => {
+    entradasFiscalesInput.focus();
+    entradasFiscalesInput.select();
+  }, 100);
+}
+
+function actualizarPreviewFiscal() {
+  const entradas = parseInt(entradasFiscalesInput.value) || 0;
+  const monto = entradas * PRECIO_ENTRADA;
+
+  if (entradas > 0) {
+    fiscalPreviewAmount.textContent = `$${monto.toFixed(2)}`;
+    fiscalPreview.style.display = 'block';
+  } else {
+    fiscalPreview.style.display = 'none';
+  }
+}
+
+function guardarEntradasFiscales() {
+  const entradas = parseInt(entradasFiscalesInput.value) || 0;
+
+  // Obtener fecha actual en zona horaria de México
+  const mexicoDate = new Date().toLocaleString("en-US", {
+    timeZone: "America/Mexico_City",
+  });
+  const fechaHoy = new Date(mexicoDate).toISOString().split('T')[0];
+
+  // Guardar en localStorage con fecha
+  const datosEntradasFiscales = {
+    entradas: entradas,
+    fecha: fechaHoy,
+    monto: entradas * PRECIO_ENTRADA
+  };
+
+  localStorage.setItem('entradasFiscales', JSON.stringify(datosEntradasFiscales));
+
+  // Mostrar confirmación
+  const monto = entradas * PRECIO_ENTRADA;
+  alert(`✅ Configuración guardada:\n\n${entradas} entrada${entradas !== 1 ? 's' : ''} en efectivo\nMonto a reportar: $${monto.toFixed(2)}\n\nEste valor se usará en el reporte fiscal.`);
+
+  // Cerrar modal
+  fiscalModal.style.display = 'none';
+
+  console.log('💾 Entradas fiscales guardadas:', datosEntradasFiscales);
+}
+
+function obtenerEntradasFiscales() {
+  try {
+    // Limpiar si es un nuevo día antes de obtener
+    limpiarEntradasFiscalesSiEsNuevoDia();
+
+    const datosGuardados = localStorage.getItem('entradasFiscales');
+    if (!datosGuardados) {
+      return 0;
+    }
+
+    const datos = JSON.parse(datosGuardados);
+    return parseInt(datos.entradas) || 0;
+  } catch (error) {
+    console.error('Error al obtener entradas fiscales:', error);
+    return 0;
+  }
+}
+
+function limpiarEntradasFiscalesSiEsNuevoDia() {
+  try {
+    const datosGuardados = localStorage.getItem('entradasFiscales');
+    if (!datosGuardados) {
+      return;
+    }
+
+    const datos = JSON.parse(datosGuardados);
+
+    // Obtener fecha actual en zona horaria de México
+    const mexicoDate = new Date().toLocaleString("en-US", {
+      timeZone: "America/Mexico_City",
+    });
+    const fechaHoy = new Date(mexicoDate).toISOString().split('T')[0];
+
+    // Si la fecha guardada es diferente a hoy, limpiar
+    if (datos.fecha !== fechaHoy) {
+      console.log('🔄 Nuevo día detectado, limpiando entradas fiscales...');
+      localStorage.removeItem('entradasFiscales');
+    }
+  } catch (error) {
+    console.error('Error al verificar fecha de entradas fiscales:', error);
+  }
 }
 
 async function imprimirReporte() {
@@ -1194,10 +1317,9 @@ async function imprimirReportePublico() {
   const transferencia = parseFloat(datosReporte.total_transferencia) || 0;
   const efectivo = parseFloat(datosReporte.total_efectivo) || 0;
 
-  // Calcular 10% basado en número de entradas, no en monto
-  const entradasEfectivo = efectivo / PRECIO_ENTRADA;
-  const entradas10Porciento = Math.floor(entradasEfectivo * 0.1);
-  const montoEfectivo = entradas10Porciento * PRECIO_ENTRADA;
+  // Obtener entradas fiscales configuradas manualmente
+  const entradasFiscales = obtenerEntradasFiscales();
+  const montoEfectivo = entradasFiscales * PRECIO_ENTRADA;
 
   const cuentaFiscal = terminal1 + transferencia + montoEfectivo;
 
@@ -1224,8 +1346,8 @@ $${terminal1.toFixed(2)}
 📱 Transferencias
 $${transferencia.toFixed(2)}
 
-💵 Efectivo (10% de entradas)
-${entradas10Porciento} entrada${entradas10Porciento !== 1 ? 's' : ''}
+💵 Efectivo
+${entradasFiscales} entrada${entradasFiscales !== 1 ? 's' : ''}
 $${montoEfectivo.toFixed(2)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1308,10 +1430,9 @@ async function imprimirReportePrivado() {
   const terminal2 = parseFloat(datosReporte.total_terminal2) || 0;
   const totalGeneral = efectivo + transferencia + terminal1 + terminal2;
 
-  // Calcular 10% basado en número de entradas, no en monto
-  const entradasEfectivo = efectivo / PRECIO_ENTRADA;
-  const entradas10Porciento = Math.floor(entradasEfectivo * 0.1);
-  const montoEfectivo = entradas10Porciento * PRECIO_ENTRADA;
+  // Obtener entradas fiscales configuradas manualmente
+  const entradasFiscales = obtenerEntradasFiscales();
+  const montoEfectivo = entradasFiscales * PRECIO_ENTRADA;
 
   const cuentaFiscal = terminal1 + transferencia + montoEfectivo;
   const totalEntradas = parseInt(datosReporte.total_entradas) || 0;
@@ -1381,8 +1502,8 @@ $${totalGeneral.toFixed(2)}
 
 Terminal 1: $${terminal1.toFixed(2)}
 Transferencias: $${transferencia.toFixed(2)}
-Efectivo (10% de ${Math.floor(entradasEfectivo)} entradas):
-${entradas10Porciento} entrada${entradas10Porciento !== 1 ? 's' : ''} = $${montoEfectivo.toFixed(2)}
+Efectivo:
+${entradasFiscales} entrada${entradasFiscales !== 1 ? 's' : ''} = $${montoEfectivo.toFixed(2)}
 
 TOTAL FISCAL: $${cuentaFiscal.toFixed(2)}
 
