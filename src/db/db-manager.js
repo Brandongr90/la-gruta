@@ -61,19 +61,24 @@ class DatabaseManager {
         fechaHora = new Date(mexicoDate).toISOString();
       }
 
+      // Calcular precio unitario basado en los datos reales (para manejar cambios de precio)
+      const precioUnitario = ventaData.entradasCobrar > 0
+        ? ventaData.total / ventaData.entradasCobrar
+        : 350;
+
       // Preparar datos para insertar
       const ventaParaInsertar = {
         folio: folio,
         fecha_hora: fechaHora,
         entradas_totales: ventaData.entradas,
-        cortesias: ventaData.cortesias,
+        cortesias: ventaData.cortesias || 0,
         entradas_cobradas: ventaData.entradasCobrar,
         forma_pago: ventaData.formaPago,
         terminal: ventaData.terminal || null,
         monto_total: ventaData.total,
         efectivo_recibido: ventaData.efectivoRecibido || null,
         cambio: ventaData.cambio || null,
-        precio_unitario: 350,
+        precio_unitario: precioUnitario,
         sincronizado: true,
         client_id: ventaData.client_id || `online-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       };
@@ -85,7 +90,12 @@ class DatabaseManager {
         .single();
 
       if (error) {
-        console.error('Error al insertar venta:', error);
+        console.error('❌ Error al insertar venta en Supabase:', error);
+        console.error('   Datos que se intentaron insertar:', JSON.stringify(ventaParaInsertar, null, 2));
+        console.error('   Mensaje de error:', error.message);
+        console.error('   Código de error:', error.code);
+        console.error('   Detalles:', error.details);
+        console.error('   Hint:', error.hint);
         throw error;
       }
 

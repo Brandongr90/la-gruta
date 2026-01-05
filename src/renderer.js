@@ -18,8 +18,8 @@ const PRECIO_ENTRADA = 350;
 
 // Configuración de Impresora Térmica
 const CONFIG_IMPRESORA = {
-  ANCHO_TICKET_MM: 80,  // Ancho del ticket en milímetros
-  CARACTERES_POR_LINEA: 32,  // Aproximadamente para 80mm
+  ANCHO_TICKET_MM: 100,  // Ancho del ticket en milímetros
+  CARACTERES_POR_LINEA: 42,  // Aproximadamente para 100mm
   USAR_IMPRESORA: true  // Impresora EPSON TM-T20II (M267D) activada
 };
 
@@ -46,6 +46,16 @@ const COMANDOS_ESC_POS = {
   TEXTO_NORMAL: '\x1D\x21\x00',        // Texto tamaño normal
   TEXTO_DOBLE: '\x1D\x21\x11',         // Texto doble (ancho y alto)
 
+  // Comandos de calidad de impresión
+  ENFASIS_ON: '\x1B\x45\x01',          // Activar énfasis (mayor densidad)
+  ENFASIS_OFF: '\x1B\x45\x00',         // Desactivar énfasis
+  DOBLE_STRIKE_ON: '\x1B\x47\x01',    // Doble golpe (más oscuro)
+  DOBLE_STRIKE_OFF: '\x1B\x47\x00',   // Desactivar doble golpe
+
+  // Comandos de densidad de impresión (EPSON específico)
+  DENSIDAD_MAX: '\x1D\x7C\x00',        // Densidad de impresión máxima
+  CALOR_MAX: '\x1B\x37\x0F\x40\x03',  // Calor máximo (heating time, heating interval, heat dots)
+
   // Código de barras (opcional para futuro)
   CODIGO_BARRAS_128: '\x1D\x6B\x49',  // Código de barras CODE128
 };
@@ -70,6 +80,9 @@ const modalTitle = document.getElementById('modalTitle');
 const modalBody = document.getElementById('modalBody');
 const closeModal = document.getElementById('closeModal');
 const printReportBtn = document.getElementById('printReport');
+const printingModal = document.getElementById('printingModal');
+const printingTitle = document.getElementById('printingTitle');
+const printingProgress = document.getElementById('printingProgress');
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', async () => {
@@ -127,13 +140,10 @@ paymentRadios.forEach(radio => {
       terminalRadios.forEach(tr => tr.checked = false);
     }
     
-    if (selectedPayment === 'efectivo') {
-      cashSection.style.display = 'block';
-    } else {
-      cashSection.style.display = 'none';
-      efectivoRecibidoInput.value = '';
-      changeDisplay.style.display = 'none';
-    }
+    // Campo de efectivo recibido desactivado permanentemente
+    cashSection.style.display = 'none';
+    efectivoRecibidoInput.value = '';
+    changeDisplay.style.display = 'none';
     
     actualizarBotonImprimir();
   });
@@ -153,6 +163,28 @@ entradasInput.addEventListener('input', () => {
   actualizarBotonImprimir();
 });
 
+// Limpiar el 0 cuando se hace click/focus en el campo de entradas
+entradasInput.addEventListener('focus', () => {
+  // Seleccionar todo el texto para que sea fácil reemplazarlo
+  setTimeout(() => {
+    entradasInput.select();
+  }, 10);
+});
+
+// Si el usuario sale sin escribir nada, volver a poner 0
+entradasInput.addEventListener('blur', () => {
+  // Solo resetear si el campo está vacío o tiene valor inválido
+  // Y no estamos en medio de una impresión
+  if (!printingModal || printingModal.style.display === 'none') {
+    if (entradasInput.value === '' || parseInt(entradasInput.value) < 0) {
+      entradasInput.value = '0';
+      actualizarOpcionesCortesias();
+      actualizarCalculos();
+      actualizarBotonImprimir();
+    }
+  }
+});
+
 cortesiasSelect.addEventListener('change', () => {
   actualizarCalculos();
   actualizarBotonImprimir();
@@ -164,7 +196,7 @@ efectivoRecibidoInput.addEventListener('input', () => {
   actualizarBotonImprimir();
 });
 
-// Botón imprimir boleto
+// Botón 
 imprimirBoletoBtn.addEventListener('click', () => {
   imprimirBoleto();
 });
@@ -253,11 +285,14 @@ function manejarAtajosTeclado(e) {
 
 // Navegación automática con Enter
 function configurarNavegacionAutomatica() {
-  // Enter en campo de entradas va a cortesías
+  // Enter en campo de entradas intenta imprimir directamente
   entradasInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      cortesiasSelect.focus();
+      // Intentar imprimir si el botón está habilitado
+      if (!imprimirBoletoBtn.disabled) {
+        imprimirBoletoBtn.click();
+      }
     }
   });
   
@@ -349,6 +384,16 @@ async function imprimirBoleto() {
   const selectedTerminal = document.querySelector('input[name="terminal"]:checked')?.value;
   const efectivoRecibido = parseFloat(efectivoRecibidoInput.value) || 0;
 
+  // Mostrar modal de loading
+  printingTitle.textContent = entradas === 1 ? 'Imprimiendo boleto...' : 'Imprimiendo boletos...';
+  printingProgress.textContent = `0 de ${entradas}`;
+  printingModal.style.display = 'flex';
+
+  // Pequeña pausa para que se muestre el modal
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  try {
+
   // Actualizar ventas del día (local)
   ventasDelDia.totalEntradas += entradas;
   ventasDelDia.totalCortesias += cortesias;
@@ -377,63 +422,108 @@ async function imprimirBoleto() {
     total,
     formaPago: selectedPayment,
     terminal: selectedTerminal,
-    efectivoRecibido: null,  // Funcionalidad de efectivo recibido desactivada
-    cambio: null  // Funcionalidad de cambio desactivada
+    // Para pagos en efectivo, registrar el monto exacto (sin cambio)
+    efectivoRecibido: selectedPayment === 'efectivo' ? total : null,
+    cambio: selectedPayment === 'efectivo' ? 0 : null
   };
 
   // Guardar en la base de datos (online o offline)
   if (dbInicializada && window.clientDB) {
     try {
+      console.log('💾 Intentando guardar venta:', {
+        formaPago: ventaData.formaPago,
+        total: ventaData.total,
+        entradas: ventaData.entradas
+      });
+
       const resultado = await window.clientDB.guardarVenta(ventaData);
+
       if (resultado.success) {
         if (resultado.mode === 'online' && resultado.folio) {
           folioActual = resultado.folio + 1;
         }
-        console.log(`Venta guardada en modo ${resultado.mode}`);
+        console.log(`✅ Venta guardada exitosamente en modo ${resultado.mode}`, {
+          formaPago: ventaData.formaPago,
+          total: ventaData.total,
+          folio: resultado.folio || 'N/A (offline)'
+        });
+      } else {
+        console.error('❌ Error: La venta NO se guardó exitosamente', resultado);
       }
     } catch (error) {
-      console.error('Error al guardar venta en BD:', error);
+      console.error('❌ Excepción al guardar venta en BD:', error);
+      console.error('   Detalles de la venta que falló:', ventaData);
     }
+  } else {
+    console.error('❌ No se puede guardar: DB no inicializada o clientDB no disponible', {
+      dbInicializada,
+      clientDBDisponible: !!window.clientDB
+    });
   }
 
-  // Generar e imprimir tickets individuales (uno por cada entrada cobrada)
+  // Generar e imprimir tickets individuales (uno por cada entrada)
   const folioBase = folioActual++;
-  const totalPorEntrada = entradasCobrar > 0 ? total / entradasCobrar : 0;
+  const precioPorEntrada = PRECIO_ENTRADA;
 
-  console.log('╔══════════════════════════════╗');
-  console.log('║   TICKETS IMPRESOS           ║');
-  console.log(`║   Total de entradas: ${entradasCobrar.toString().padStart(2, ' ')}      ║`);
-  console.log('╚══════════════════════════════╝');
+  console.log('╔════════════════════════════════════════╗');
+  console.log('║         TICKETS IMPRESOS               ║');
+  console.log(`║   Total de entradas: ${entradas.toString().padStart(2, ' ')}            ║`);
+  console.log(`║   Cortesías: ${cortesias.toString().padStart(2, ' ')}                    ║`);
+  console.log(`║   Cobradas: ${entradasCobrar.toString().padStart(2, ' ')}                     ║`);
+  console.log('╚════════════════════════════════════════╝');
   console.log('');
 
-  // Imprimir un ticket por cada entrada cobrada
-  for (let i = 0; i < entradasCobrar; i++) {
+  // Generar todos los tickets y combinarlos en una sola impresión
+  let todosLosTickets = '';
+
+  for (let i = 0; i < entradas; i++) {
     const numEntrada = i + 1;
+    const esCortesia = i >= entradasCobrar; // Las últimas 'cortesias' entradas son cortesía
+
+    // Actualizar progreso en el modal
+    printingProgress.textContent = `Generando ${numEntrada} de ${entradas}`;
+
     const ticket = generarTicketIndividual({
       folio: folioBase,
       numEntrada: numEntrada,
-      totalEntradas: entradasCobrar,
-      precioPorEntrada: totalPorEntrada,
+      totalEntradas: entradas,
+      precioPorEntrada: precioPorEntrada,
+      esCortesia: esCortesia,
       formaPago: selectedPayment,
       terminal: selectedTerminal,
       // Solo mostrar info de pago en el primer ticket
       mostrarPago: i === 0,
       totalVenta: total,
-      efectivoRecibido: null,  // Funcionalidad desactivada
-      cambio: null  // Funcionalidad desactivada
+      efectivoRecibido: selectedPayment === 'efectivo' ? total : null,
+      cambio: selectedPayment === 'efectivo' ? 0 : null
     });
 
-    // Imprimir ticket
-    if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
-      await imprimirTicketTermico(ticket);
-    } else {
-      console.log(ticket);
+    // Agregar el ticket al conjunto total
+    todosLosTickets += ticket;
+
+    // Agregar línea de corte entre tickets (excepto después del último)
+    if (i < entradas - 1) {
+      todosLosTickets += '\n\n';  // Pequeño espacio entre tickets
     }
   }
 
-  console.log('═══════════════════════════════');
-  console.log(`Total de tickets impresos: ${entradasCobrar}`);
-  console.log('═══════════════════════════════');
+  // Imprimir TODOS los tickets en una sola operación
+  printingProgress.textContent = `Imprimiendo ${entradas} ticket(s)...`;
+
+  if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
+    await imprimirTicketTermico(todosLosTickets);
+  } else {
+    console.log(todosLosTickets);
+  }
+
+  // Actualizar progreso final
+  printingProgress.textContent = `${entradas} de ${entradas} completados`;
+
+  console.log('══════════════════════════════════════════');
+  console.log(`Total de tickets impresos: ${entradas}`);
+  console.log(`  - Pagadas: ${entradasCobrar}`);
+  console.log(`  - Cortesías: ${cortesias}`);
+  console.log('══════════════════════════════════════════');
 
   // Mostrar confirmación visual
   mostrarConfirmacionImpresion();
@@ -443,30 +533,37 @@ async function imprimirBoleto() {
 
   // Guardar datos localmente
   guardarDatos();
+
+  } catch (error) {
+    console.error('Error durante la impresión:', error);
+    alert(`Error al imprimir boletos: ${error.message}`);
+  } finally {
+    // Siempre ocultar modal de loading, incluso si hay error
+    printingModal.style.display = 'none';
+  }
 }
 
 function generarTicketIndividual(datos) {
   const fecha = new Date().toLocaleString('es-MX');
 
-  let ticket = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  let ticket = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            LA GRUTA
        Balneario y Spa
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 FOLIO: ${datos.folio.toString().padStart(6, '0')}
 FECHA: ${fecha}
 
 ENTRADA ${datos.numEntrada} de ${datos.totalEntradas}
 
-PRECIO: $${datos.precioPorEntrada.toFixed(2)}
+${datos.esCortesia ? '*** CORTESÍA ***' : `PRECIO: $${datos.precioPorEntrada.toFixed(2)}`}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  // Solo mostrar información de pago en el primer ticket
-  if (datos.mostrarPago) {
+  // Solo mostrar información de pago en el primer ticket Y si no es cortesía
+  if (datos.mostrarPago && !datos.esCortesia) {
     ticket += `
+
 INFORMACIÓN DE PAGO:
 
 FORMA DE PAGO: ${datos.formaPago.toUpperCase()}${datos.terminal ? ` (${datos.terminal.toUpperCase()})` : ''}
@@ -474,17 +571,17 @@ TOTAL VENTA: $${datos.totalVenta.toFixed(2)}
 ${datos.efectivoRecibido !== null ? `EFECTIVO RECIBIDO: $${datos.efectivoRecibido.toFixed(2)}
 CAMBIO: $${datos.cambio.toFixed(2)}` : ''}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   }
 
   ticket += `
+
 PROHIBIDA LA ENTRADA DE:
 • Alimentos
 • Bebidas
 • Mascotas
 USO EXCLUSIVO DE TRAJE DE BAÑO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 www.lagruta-spa.com.mx
 Tel. 4151852162
@@ -496,8 +593,7 @@ Una vez pagado no hay devoluciones
 Solicitar factura en el momento
 de la compra
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  `;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   return ticket;
 }
@@ -507,20 +603,9 @@ async function imprimirTicketTermico(contenidoTicket) {
   try {
     console.log('🖨️ Enviando a impresora térmica...');
 
-    // Preparar datos para impresión con comandos ESC/POS
-    let datosImpresion = '';
-
-    // 1. Inicializar impresora
-    datosImpresion += COMANDOS_ESC_POS.INIT;
-
-    // 2. Agregar contenido del ticket
-    datosImpresion += contenidoTicket;
-
-    // 3. Avanzar un poco de papel antes del corte
-    datosImpresion += COMANDOS_ESC_POS.AVANZAR_3_LINEAS;
-
-    // 4. Corte parcial
-    datosImpresion += COMANDOS_ESC_POS.CORTE_PARCIAL;
+    // El sistema convierte a HTML, no usamos comandos ESC/POS
+    // La densidad se controla desde el CSS en main.js
+    const datosImpresion = contenidoTicket;
 
     // Enviar a la impresora vía Electron IPC
     if (window.electronAPI?.imprimirTicket) {
@@ -565,12 +650,12 @@ function limpiarFormulario() {
   cortesiasSelect.innerHTML = '<option value="0">0</option>';
   efectivoRecibidoInput.value = '';
   changeDisplay.style.display = 'none';
-  
+
   // Resetear a efectivo
   document.querySelector('input[value="efectivo"]').checked = true;
   terminalSelection.style.display = 'none';
-  cashSection.style.display = 'block';
-  
+  cashSection.style.display = 'none';  // Campo desactivado permanentemente
+
   actualizarCalculos();
   actualizarBotonImprimir();
   
@@ -619,14 +704,22 @@ async function mostrarCierreVentas() {
       total_entradas: ventasDelDia.totalEntradas || 0,
       total_cortesias: ventasDelDia.totalCortesias || 0,
       total_efectivo: ventasDelDia.efectivo || 0,
+      total_transferencia: ventasDelDia.transferencia || 0,
       total_terminal1: ventasDelDia.terminal1 || 0,
       total_ventas: 0 // No se puede calcular el total de ventas sin acceso a la BD
     };
   }
 
   const terminal1 = parseFloat(datosReporte.total_terminal1) || 0;
+  const transferencia = parseFloat(datosReporte.total_transferencia) || 0;
   const efectivo = parseFloat(datosReporte.total_efectivo) || 0;
-  const cuentaFiscal = terminal1 + (efectivo * 0.1);
+
+  // Calcular 10% basado en número de entradas, no en monto
+  const entradasEfectivo = efectivo / PRECIO_ENTRADA;
+  const entradas10Porciento = Math.floor(entradasEfectivo * 0.1);
+  const montoEfectivo = entradas10Porciento * PRECIO_ENTRADA;
+
+  const cuentaFiscal = terminal1 + transferencia + montoEfectivo;
   const totalEntradas = parseInt(datosReporte.total_entradas) || 0;
   const totalCortesias = parseInt(datosReporte.total_cortesias) || 0;
   const entradasCobradas = totalEntradas - totalCortesias;
@@ -657,8 +750,14 @@ async function mostrarCierreVentas() {
           </div>
           <div class="fiscal-item">
             <div class="fiscal-item-info">
-              <span class="fiscal-label">💵 Efectivo</span>
-              <span class="fiscal-amount">$${(efectivo * 0.1).toFixed(2)}</span>
+              <span class="fiscal-label">📱 Transferencias</span>
+              <span class="fiscal-amount">$${transferencia.toFixed(2)}</span>
+            </div>
+          </div>
+          <div class="fiscal-item">
+            <div class="fiscal-item-info">
+              <span class="fiscal-label">💵 Efectivo (10% de entradas)</span>
+              <span class="fiscal-amount">${entradas10Porciento} entrada${entradas10Porciento !== 1 ? 's' : ''} - $${montoEfectivo.toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -738,7 +837,13 @@ async function mostrarReporteCompleto() {
   const terminal1 = parseFloat(datosReporte.total_terminal1) || 0;
   const terminal2 = parseFloat(datosReporte.total_terminal2) || 0;
   const totalGeneral = efectivo + transferencia + terminal1 + terminal2;
-  const cuentaFiscal = terminal1 + (efectivo * 0.1);
+
+  // Calcular 10% basado en número de entradas, no en monto
+  const entradasEfectivo = efectivo / PRECIO_ENTRADA;
+  const entradas10Porciento = Math.floor(entradasEfectivo * 0.1);
+  const montoEfectivo = entradas10Porciento * PRECIO_ENTRADA;
+
+  const cuentaFiscal = terminal1 + transferencia + montoEfectivo;
   const totalEntradas = parseInt(datosReporte.total_entradas) || 0;
   const totalCortesias = parseInt(datosReporte.total_cortesias) || 0;
   const entradasCobradas = totalEntradas - totalCortesias;
@@ -871,8 +976,14 @@ async function mostrarReporteCompleto() {
             </div>
             <div class="fiscal-item">
               <div class="fiscal-item-info">
-                <span class="fiscal-label">💵 Efectivo</span>
-                <span class="fiscal-amount">$${(efectivo * 0.1).toFixed(2)}</span>
+                <span class="fiscal-label">📱 Transferencias</span>
+                <span class="fiscal-amount">$${transferencia.toFixed(2)}</span>
+              </div>
+            </div>
+            <div class="fiscal-item">
+              <div class="fiscal-item-info">
+                <span class="fiscal-label">💵 Efectivo (10% entradas)</span>
+                <span class="fiscal-amount">${entradas10Porciento} entrada${entradas10Porciento !== 1 ? 's' : ''} - $${montoEfectivo.toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -1074,44 +1185,55 @@ async function imprimirReportePublico() {
   if (!datosReporte) {
     datosReporte = {
       total_efectivo: ventasDelDia.efectivo || 0,
+      total_transferencia: ventasDelDia.transferencia || 0,
       total_terminal1: ventasDelDia.terminal1 || 0
     };
   }
 
   const terminal1 = parseFloat(datosReporte.total_terminal1) || 0;
+  const transferencia = parseFloat(datosReporte.total_transferencia) || 0;
   const efectivo = parseFloat(datosReporte.total_efectivo) || 0;
-  const cuentaFiscal = terminal1 + (efectivo * 0.1);
+
+  // Calcular 10% basado en número de entradas, no en monto
+  const entradasEfectivo = efectivo / PRECIO_ENTRADA;
+  const entradas10Porciento = Math.floor(entradasEfectivo * 0.1);
+  const montoEfectivo = entradas10Porciento * PRECIO_ENTRADA;
+
+  const cuentaFiscal = terminal1 + transferencia + montoEfectivo;
 
   const fecha = new Date().toLocaleString('es-MX');
   const fechaSolo = new Date().toLocaleDateString('es-MX');
 
-  const ticket = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const ticket = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            LA GRUTA
        Balneario y Spa
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
    CIERRE DE VENTAS DEL DÍA
         (CUENTA FISCAL)
 
-FECHA: ${fecha}
+FECHA: ${fechaSolo}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DESGLOSE:
 
 💳 Terminal 1
-   $${terminal1.toFixed(2)}
+$${terminal1.toFixed(2)}
 
-💵 Efectivo
-   $${(efectivo * 0.1).toFixed(2)}
+📱 Transferencias
+$${transferencia.toFixed(2)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💵 Efectivo (10% de entradas)
+${entradas10Porciento} entrada${entradas10Porciento !== 1 ? 's' : ''}
+$${montoEfectivo.toFixed(2)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 TOTAL A REPORTAR:
-   $${cuentaFiscal.toFixed(2)}
+$${cuentaFiscal.toFixed(2)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Este reporte muestra únicamente
 la cuenta fiscal para efectos
@@ -1120,35 +1242,36 @@ administrativos públicos.
 Para reporte completo consultar
 con administración.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 www.lagruta-spa.com.mx
 Tel. 4151852162
 
 ${fechaSolo}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  `;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
+  // Mostrar en consola primero
+  console.log('');
+  console.log('╔════════════════════════════════════════╗');
+  console.log('║    VISTA PREVIA DE IMPRESIÓN           ║');
+  console.log('║       REPORTE FISCAL                   ║');
+  console.log('╚════════════════════════════════════════╝');
   console.log(ticket);
+  console.log('══════════════════════════════════════════');
+  console.log('');
 
-  // Imprimir en impresora térmica
-  if (CONFIG_IMPRESORA.USAR_IMPRESORA && window.electronAPI?.imprimirTicket) {
+  // Imprimir en impresora térmica usando la misma lógica que los tickets
+  if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
     try {
-      console.log('📄 Enviando reporte a impresora térmica...');
-      const resultado = await window.electronAPI.imprimirTicket(ticket);
-
-      if (resultado.success) {
-        console.log('✅ Reporte fiscal impreso correctamente');
-        alert('Reporte fiscal impreso correctamente');
-      } else {
-        console.error('❌ Error al imprimir reporte:', resultado.error);
-        alert(`Error al imprimir reporte: ${resultado.error}`);
-      }
+      console.log('📄 Enviando reporte fiscal a impresora térmica...');
+      await imprimirTicketTermico(ticket);
+      console.log('✅ Reporte fiscal impreso correctamente');
+      alert('Reporte fiscal impreso correctamente');
     } catch (error) {
       console.error('❌ Error al imprimir reporte:', error);
       alert(`Error al imprimir reporte: ${error.message}`);
     }
   } else {
-    console.log('📋 Impresión en consola (impresora no configurada)');
+    console.log('📋 Modo simulación (impresora desactivada)');
   }
 }
 
@@ -1184,7 +1307,13 @@ async function imprimirReportePrivado() {
   const terminal1 = parseFloat(datosReporte.total_terminal1) || 0;
   const terminal2 = parseFloat(datosReporte.total_terminal2) || 0;
   const totalGeneral = efectivo + transferencia + terminal1 + terminal2;
-  const cuentaFiscal = terminal1 + (efectivo * 0.1);
+
+  // Calcular 10% basado en número de entradas, no en monto
+  const entradasEfectivo = efectivo / PRECIO_ENTRADA;
+  const entradas10Porciento = Math.floor(entradasEfectivo * 0.1);
+  const montoEfectivo = entradas10Porciento * PRECIO_ENTRADA;
+
+  const cuentaFiscal = terminal1 + transferencia + montoEfectivo;
   const totalEntradas = parseInt(datosReporte.total_entradas) || 0;
   const totalCortesias = parseInt(datosReporte.total_cortesias) || 0;
   const entradasCobradas = totalEntradas - totalCortesias;
@@ -1206,60 +1335,60 @@ async function imprimirReportePrivado() {
     }
   }
 
-  let ticket = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  let ticket = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            LA GRUTA
        Balneario y Spa
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
      REPORTE COMPLETO DEL DÍA
          (CONFIDENCIAL)
 
-FECHA: ${fecha}
+FECHA: ${fechaSolo}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
          RESUMEN GENERAL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ENTRADAS:
-  Total vendidas: ${totalEntradas}
-  Cortesías: ${totalCortesias}
-  Cobradas: ${entradasCobradas}
+Total vendidas: ${totalEntradas}
+Cortesías: ${totalCortesias}
+Cobradas: ${entradasCobradas}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
        DESGLOSE POR PAGO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 💵 Efectivo
-   $${efectivo.toFixed(2)}
+$${efectivo.toFixed(2)}
 
 📱 Transferencia
-   $${transferencia.toFixed(2)}
+$${transferencia.toFixed(2)}
 
 💳 Terminal 1
-   $${terminal1.toFixed(2)}
+$${terminal1.toFixed(2)}
 
 💳 Terminal 2
-   $${terminal2.toFixed(2)}
+$${terminal2.toFixed(2)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 TOTAL GENERAL:
-   $${totalGeneral.toFixed(2)}
+$${totalGeneral.toFixed(2)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
          CUENTA FISCAL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Terminal 1: $${terminal1.toFixed(2)}
-Efectivo 10%: $${(efectivo * 0.1).toFixed(2)}
+Transferencias: $${transferencia.toFixed(2)}
+Efectivo (10% de ${Math.floor(entradasEfectivo)} entradas):
+${entradas10Porciento} entrada${entradas10Porciento !== 1 ? 's' : ''} = $${montoEfectivo.toFixed(2)}
 
 TOTAL FISCAL: $${cuentaFiscal.toFixed(2)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         DETALLE DE VENTAS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   // Agregar detalle de cada venta
   if (ventasDelDiaDetalle.length > 0) {
@@ -1280,14 +1409,14 @@ Cobradas: ${venta.entradas_cobradas}
 Pago: ${formaPagoTexto}${terminalTexto}
 Total: $${parseFloat(venta.monto_total).toFixed(2)}
 ${venta.efectivo_recibido ? `Efectivo: $${parseFloat(venta.efectivo_recibido).toFixed(2)} | Cambio: $${parseFloat(venta.cambio).toFixed(2)}` : ''}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
     });
   } else {
     ticket += `
 No hay ventas registradas en la
 base de datos para el día de hoy.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
   }
 
@@ -1296,35 +1425,37 @@ base de datos para el día de hoy.
 DOCUMENTO CONFIDENCIAL
 Solo para uso administrativo
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 www.lagruta-spa.com.mx
 Tel. 4151852162
 
 ${fechaSolo}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   `;
 
+  // Mostrar en consola primero
+  console.log('');
+  console.log('╔════════════════════════════════════════╗');
+  console.log('║    VISTA PREVIA DE IMPRESIÓN           ║');
+  console.log('║       REPORTE COMPLETO                 ║');
+  console.log('╚════════════════════════════════════════╝');
   console.log(ticket);
+  console.log('══════════════════════════════════════════');
+  console.log('');
 
-  // Imprimir en impresora térmica
-  if (CONFIG_IMPRESORA.USAR_IMPRESORA && window.electronAPI?.imprimirTicket) {
+  // Imprimir en impresora térmica usando la misma lógica que los tickets
+  if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
     try {
       console.log('📄 Enviando reporte completo a impresora térmica...');
-      const resultado = await window.electronAPI.imprimirTicket(ticket);
-
-      if (resultado.success) {
-        console.log('✅ Reporte completo impreso correctamente');
-        alert('Reporte completo impreso correctamente');
-      } else {
-        console.error('❌ Error al imprimir reporte:', resultado.error);
-        alert(`Error al imprimir reporte: ${resultado.error}`);
-      }
+      await imprimirTicketTermico(ticket);
+      console.log('✅ Reporte completo impreso correctamente');
+      alert('Reporte completo impreso correctamente');
     } catch (error) {
       console.error('❌ Error al imprimir reporte:', error);
       alert(`Error al imprimir reporte: ${error.message}`);
     }
   } else {
-    console.log('📋 Impresión en consola (impresora no configurada)');
+    console.log('📋 Modo simulación (impresora desactivada)');
   }
 }
 
@@ -1455,6 +1586,96 @@ async function obtenerReporteDesdeSupabase(tipo = 'dia') {
   }
 }
 
+// Función de diagnóstico completa
+async function diagnosticarVentas() {
+  console.log('═══════════════════════════════════════════════════');
+  console.log('🔍 DIAGNÓSTICO DE VENTAS');
+  console.log('═══════════════════════════════════════════════════');
+
+  // 1. Estado de la base de datos
+  console.log('\n📊 Estado de la Base de Datos:');
+  console.log('   - DB Inicializada:', dbInicializada);
+  console.log('   - ClientDB disponible:', !!window.clientDB);
+  console.log('   - ElectronAPI disponible:', !!window.electronAPI?.db);
+  console.log('   - Conexión online:', navigator.onLine);
+
+  // 2. Ventas locales del día (en memoria)
+  console.log('\n💰 Ventas del Día (en memoria):');
+  console.log('   - Efectivo: $' + ventasDelDia.efectivo.toFixed(2));
+  console.log('   - Transferencia: $' + ventasDelDia.transferencia.toFixed(2));
+  console.log('   - Terminal 1: $' + ventasDelDia.terminal1.toFixed(2));
+  console.log('   - Terminal 2: $' + ventasDelDia.terminal2.toFixed(2));
+  console.log('   - Total Entradas:', ventasDelDia.totalEntradas);
+  console.log('   - Total Cortesías:', ventasDelDia.totalCortesias);
+
+  // 3. Ventas pendientes de sincronizar (IndexedDB)
+  if (window.clientDB) {
+    try {
+      const pendientes = await window.clientDB.obtenerVentasPendientes();
+      console.log('\n📦 Ventas Pendientes de Sincronizar (IndexedDB):');
+      console.log('   - Cantidad:', pendientes.length);
+
+      if (pendientes.length > 0) {
+        console.log('   - Detalle de ventas pendientes:');
+        pendientes.forEach((venta, index) => {
+          console.log(`      ${index + 1}. Forma Pago: ${venta.formaPago}, Total: $${venta.total}, Entradas: ${venta.entradas}, Fecha: ${venta.fecha_hora}`);
+        });
+
+        // Resumen por forma de pago
+        const resumenPendientes = pendientes.reduce((acc, venta) => {
+          acc[venta.formaPago] = (acc[venta.formaPago] || 0) + parseFloat(venta.total);
+          return acc;
+        }, {});
+
+        console.log('\n   - Resumen por forma de pago:');
+        Object.entries(resumenPendientes).forEach(([formaPago, total]) => {
+          console.log(`      ${formaPago}: $${total.toFixed(2)}`);
+        });
+      }
+    } catch (error) {
+      console.error('   ❌ Error al obtener ventas pendientes:', error);
+    }
+  }
+
+  // 4. Ventas en Supabase (día actual)
+  if (window.electronAPI?.db && navigator.onLine) {
+    try {
+      console.log('\n☁️  Verificando Ventas en Supabase...');
+      const resultado = await window.electronAPI.db.obtenerVentasDelDia();
+
+      if (resultado.success && resultado.data) {
+        console.log('   - Total de ventas en Supabase hoy:', resultado.data.length);
+
+        // Resumen por forma de pago
+        const resumenSupabase = resultado.data.reduce((acc, venta) => {
+          acc[venta.forma_pago] = (acc[venta.forma_pago] || 0) + parseFloat(venta.monto_total);
+          return acc;
+        }, {});
+
+        console.log('   - Resumen por forma de pago:');
+        Object.entries(resumenSupabase).forEach(([formaPago, total]) => {
+          console.log(`      ${formaPago}: $${total.toFixed(2)}`);
+        });
+
+        // Mostrar últimas 5 ventas
+        console.log('\n   - Últimas 5 ventas:');
+        resultado.data.slice(0, 5).forEach((venta, index) => {
+          console.log(`      ${index + 1}. Folio: ${venta.folio}, Forma Pago: ${venta.forma_pago}, Total: $${venta.monto_total}, Entradas: ${venta.entradas_totales}`);
+        });
+      }
+    } catch (error) {
+      console.error('   ❌ Error al obtener ventas de Supabase:', error);
+    }
+  } else {
+    console.log('\n☁️  No se puede verificar Supabase (sin conexión o API no disponible)');
+  }
+
+  console.log('\n═══════════════════════════════════════════════════');
+  console.log('✅ Diagnóstico completado');
+  console.log('═══════════════════════════════════════════════════');
+}
+
 // Exponer funciones para debugging
 window.sincronizarManualmente = sincronizarManualmente;
 window.obtenerReporteDesdeSupabase = obtenerReporteDesdeSupabase;
+window.diagnosticarVentas = diagnosticarVentas;

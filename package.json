@@ -1,6 +1,6 @@
 {
   "name": "lagruta-ticket-system",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "main": "src/main.js",
   "repository": {
     "type": "git",
@@ -29,7 +29,14 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "assets/icon.ico"
     },
     "mac": {

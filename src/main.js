@@ -266,15 +266,15 @@ ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
     });
 
     // Convertir el contenido del ticket a HTML
-    // Escapar caracteres especiales para HTML
+    // Escapar caracteres especiales para HTML (SIN modificar espacios)
     const contenidoEscapado = datosImpresion
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/\n/g, '<br>');
 
-    // Agregar líneas en blanco al final para espacio antes del corte
-    const contenidoFinal = contenidoEscapado + '<br><br><br>';
+    // Solo agregar una línea al final para el corte
+    const contenidoFinal = contenidoEscapado + '<br>';
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -284,23 +284,33 @@ ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
         <style>
           @page {
             size: 80mm auto;
-            margin: 2mm 5mm;
+            margin: 0;
           }
-          @media print {
-            body {
-              margin: 0;
-              padding: 0;
-            }
-          }
-          body {
+          * {
             margin: 0;
             padding: 0;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 10px;
+          }
+          html, body {
+            width: 80mm;
+            margin: 0;
+            padding: 0;
+          }
+          body {
+            padding: 2mm;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            font-weight: 900;
+            line-height: 1.2;
             white-space: pre-wrap;
-            word-wrap: break-word;
-            line-height: 1.3;
-            width: 72mm;
+            color: #000;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            filter: contrast(2);
+            text-shadow:
+              0.3px 0 0 #000,
+              -0.3px 0 0 #000,
+              0 0.3px 0 #000,
+              0 -0.3px 0 #000;
           }
         </style>
       </head>
@@ -323,29 +333,25 @@ ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
     // Configuración de impresión para impresora térmica de 80mm
     const printOptions = {
       silent: true, // Imprimir sin mostrar el diálogo
-      printBackground: false,
+      printBackground: true, // Activar para aplicar filtros CSS
       deviceName: printerName, // Nombre exacto de la impresora
       color: false, // Impresión en blanco y negro
       margins: {
-        marginType: 'custom',
-        top: 0,
-        bottom: 0,
-        left: 2,
-        right: 2
+        marginType: 'none'  // Sin márgenes, se controlan desde CSS
       },
       landscape: false,
       scaleFactor: 100,
       pagesPerSheet: 1,
       collate: false,
       copies: 1,
-      pageSize: {
-        height: 297000, // Altura automática (A4 height en micrómetros como fallback)
-        width: 80000    // 80mm en micrómetros
-      },
+      // NO usar pageSize aquí, dejamos que el CSS @page lo maneje
       dpi: {
-        horizontal: 203,
-        vertical: 203
-      }
+        horizontal: 300,  // Aumentado de 203 a 300 DPI
+        vertical: 300     // Mayor resolución = más oscuro
+      },
+      // Configuraciones adicionales para papel térmico continuo
+      preferCSSPageSize: true,
+      headerFooterEnabled: false  // Sin encabezados ni pies de página
     };
 
     sendLog("   4. Llamando a webContents.print()...");
