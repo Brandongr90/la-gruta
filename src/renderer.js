@@ -575,7 +575,7 @@ ENTRADA GENERAL $ ${datos.precioPorEntrada.toFixed(2)} FOLIO ${datos.folio.toStr
   // Solo mostrar información de pago en el primer ticket Y si no es cortesía
   if (datos.mostrarPago && !datos.esCortesia) {
     ticket += `
-PAGO: ${datos.formaPago.toUpperCase()}${datos.terminal ? ` (${datos.terminal.toUpperCase()})` : ''}
+PAGO: ${datos.formaPago.toUpperCase()}
 TOTAL VENTA: $${datos.totalVenta.toFixed(2)}`;
     if (datos.efectivoRecibido !== null) {
       ticket += `
