@@ -502,15 +502,13 @@ async function imprimirBoleto() {
   console.log('╚════════════════════════════════════════╝');
   console.log('');
 
-  // Generar todos los tickets y combinarlos en una sola impresión
-  let todosLosTickets = '';
-
+  // Imprimir tickets individualmente (uno por uno) para que la impresora corte entre cada uno
   for (let i = 0; i < entradas; i++) {
     const numEntrada = i + 1;
     const esCortesia = i >= entradasCobrar; // Las últimas 'cortesias' entradas son cortesía
 
     // Actualizar progreso en el modal
-    printingProgress.textContent = `Generando ${numEntrada} de ${entradas}`;
+    printingProgress.textContent = `Imprimiendo ${numEntrada} de ${entradas}`;
 
     const ticket = generarTicketIndividual({
       folio: folioBase,
@@ -527,22 +525,14 @@ async function imprimirBoleto() {
       cambio: selectedPayment === 'efectivo' ? 0 : null
     });
 
-    // Agregar el ticket al conjunto total
-    todosLosTickets += ticket;
-
-    // Agregar línea de corte entre tickets (excepto después del último)
-    if (i < entradas - 1) {
-      todosLosTickets += '\n\n';  // Pequeño espacio entre tickets
+    // Imprimir CADA ticket individualmente para que la impresora corte después de cada uno
+    if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
+      await imprimirTicketTermico(ticket);
+      // Pequeña pausa entre impresiones para que la impresora procese
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } else {
+      console.log(ticket);
     }
-  }
-
-  // Imprimir TODOS los tickets en una sola operación
-  printingProgress.textContent = `Imprimiendo ${entradas} ticket(s)...`;
-
-  if (CONFIG_IMPRESORA.USAR_IMPRESORA) {
-    await imprimirTicketTermico(todosLosTickets);
-  } else {
-    console.log(todosLosTickets);
   }
 
   // Actualizar progreso final

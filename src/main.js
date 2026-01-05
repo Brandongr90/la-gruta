@@ -266,15 +266,23 @@ ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
     });
 
     // Convertir el contenido del ticket a HTML
-    // Escapar caracteres especiales para HTML (SIN modificar espacios)
-    const contenidoEscapado = datosImpresion
+    // PRIMERO: Reemplazar el marcador de corte ANTES de escapar
+    const contenidoConCortes = datosImpresion
+      .replace(/<<<CORTE>>>/g, '|||PAGEBREAK|||');  // Marcador temporal
+
+    // SEGUNDO: Escapar caracteres especiales para HTML (SIN modificar espacios)
+    const contenidoEscapado = contenidoConCortes
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/\n/g, '<br>');
+      .replace(/\n/g, '<br>')
+      .replace(/\|\|\|PAGEBREAK\|\|\|/g, '</div><div class="ticket-page">');  // Crear nueva página para cada ticket
+
+    // Envolver todo el contenido en divs de ticket-page
+    const contenidoConDivs = '<div class="ticket-page">' + contenidoEscapado + '</div>';
 
     // Agregar líneas en blanco al final para espacio antes del corte
-    const contenidoFinal = contenidoEscapado + '<br><br><br>';
+    const contenidoFinal = contenidoConDivs + '<br><br><br>';
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -311,6 +319,15 @@ ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
               -0.3px 0 0 #000,
               0 0.3px 0 #000,
               0 -0.3px 0 #000;
+          }
+          .ticket-page {
+            page-break-after: always;
+            break-after: page;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          .ticket-page:last-child {
+            page-break-after: auto;
           }
         </style>
       </head>
