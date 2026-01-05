@@ -575,12 +575,12 @@ async function imprimirBoleto() {
 function generarTicketIndividual(datos) {
   const fecha = new Date().toLocaleString('es-MX');
 
-  let ticket = `      LA GRUTA SPA
+  let ticket = `        LA GRUTA SPA
 CARR. SAN MIGUEL-DOLORES KM 10
 FECHA: ${fecha}
----------------------------------------
+-------------------------------------
 ENTRADA GENERAL $ ${datos.precioPorEntrada.toFixed(2)} FOLIO ${datos.folio.toString().padStart(4, '0')}
----------------------------------------`;
+-------------------------------------`;
 
   // Solo mostrar información de pago en el primer ticket Y si no es cortesía
   if (datos.mostrarPago && !datos.esCortesia) {
@@ -589,16 +589,16 @@ PAGO: ${datos.formaPago.toUpperCase()}${datos.terminal ? ` (${datos.terminal.toU
 TOTAL VENTA: $${datos.totalVenta.toFixed(2)}`;
     if (datos.efectivoRecibido !== null) {
       ticket += `
-EFECTIVO: $${datos.efectivoRecibido.toFixed(2)} CAMBIO: $${datos.cambio.toFixed(2)}`;
+EFECTIVO: $${datos.efectivoRecibido.toFixed(2)}`;
     }
     ticket += `
----------------------------------------`;
+-------------------------------------`;
   }
 
   if (datos.esCortesia) {
     ticket += `
 *** CORTESÍA ***
----------------------------------------`;
+-------------------------------------`;
   }
 
   ticket += `
@@ -607,13 +607,13 @@ ENTRADA ${datos.numEntrada} de ${datos.totalEntradas}
 PROHIBIDA ENTRADA: ALIMENTOS, BEBIDAS
 Y MASCOTAS
 USO EXCLUSIVO DE TRAJE DE BAÑO
-       www.lagruta-spa.com.mx
-       GRACIAS POR TU VISITA!!
+www.lagruta-spa.com.mx
+GRACIAS POR TU VISITA!!
 NO VALIDO COMO COMPROBANTE FISCAL
 UNA VEZ PAGADO NO HAY DEVOLUCIONES
-       TEL. 4151852162
+TEL. 4151852162
 SOLICITAR FACTURA EL DIA DE TU VISITA
----------------------------------------`;
+-------------------------------------`;
 
   return ticket;
 }
@@ -1326,21 +1326,20 @@ async function imprimirReportePublico() {
   const fecha = new Date().toLocaleString('es-MX');
   const fechaSolo = new Date().toLocaleDateString('es-MX');
 
-  const ticket = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const ticket = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            LA GRUTA
        Balneario y Spa
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
    CIERRE DE VENTAS DEL DÍA
-        (CUENTA FISCAL)
 
 FECHA: ${fechaSolo}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DESGLOSE:
 
-💳 Terminal 1
+💳 Terminal
 $${terminal1.toFixed(2)}
 
 📱 Transferencias
@@ -1350,26 +1349,16 @@ $${transferencia.toFixed(2)}
 ${entradasFiscales} entrada${entradasFiscales !== 1 ? 's' : ''}
 $${montoEfectivo.toFixed(2)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-TOTAL A REPORTAR:
+TOTAL:
 $${cuentaFiscal.toFixed(2)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Este reporte muestra únicamente
-la cuenta fiscal para efectos
-administrativos públicos.
-
-Para reporte completo consultar
-con administración.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 www.lagruta-spa.com.mx
 Tel. 4151852162
-
 ${fechaSolo}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   // Mostrar en consola primero
   console.log('');
@@ -1456,28 +1445,28 @@ async function imprimirReportePrivado() {
     }
   }
 
-  let ticket = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  let ticket = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            LA GRUTA
        Balneario y Spa
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
      REPORTE COMPLETO DEL DÍA
          (CONFIDENCIAL)
 
 FECHA: ${fechaSolo}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
          RESUMEN GENERAL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ENTRADAS:
 Total vendidas: ${totalEntradas}
 Cortesías: ${totalCortesias}
 Cobradas: ${entradasCobradas}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
        DESGLOSE POR PAGO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 💵 Efectivo
 $${efectivo.toFixed(2)}
@@ -1491,25 +1480,14 @@ $${terminal1.toFixed(2)}
 💳 Terminal 2
 $${terminal2.toFixed(2)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 TOTAL GENERAL:
 $${totalGeneral.toFixed(2)}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-         CUENTA FISCAL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Terminal 1: $${terminal1.toFixed(2)}
-Transferencias: $${transferencia.toFixed(2)}
-Efectivo:
-${entradasFiscales} entrada${entradasFiscales !== 1 ? 's' : ''} = $${montoEfectivo.toFixed(2)}
-
-TOTAL FISCAL: $${cuentaFiscal.toFixed(2)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         DETALLE DE VENTAS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   // Agregar detalle de cada venta
   if (ventasDelDiaDetalle.length > 0) {

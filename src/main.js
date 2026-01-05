@@ -273,8 +273,8 @@ ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
       .replace(/>/g, '&gt;')
       .replace(/\n/g, '<br>');
 
-    // Solo agregar una línea al final para el corte
-    const contenidoFinal = contenidoEscapado + '<br>';
+    // Agregar líneas en blanco al final para espacio antes del corte
+    const contenidoFinal = contenidoEscapado + '<br><br><br>';
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -284,24 +284,24 @@ ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
         <style>
           @page {
             size: 80mm auto;
-            margin: 0;
+            margin: 2mm 5mm;
           }
-          * {
-            margin: 0;
-            padding: 0;
-          }
-          html, body {
-            width: 80mm;
-            margin: 0;
-            padding: 0;
+          @media print {
+            body {
+              margin: 0;
+              padding: 0;
+            }
           }
           body {
-            padding: 2mm;
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            font-weight: 900;
-            line-height: 1.2;
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            font-weight: 500;
             white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.3;
+            width: 72mm;
             color: #000;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
@@ -333,25 +333,29 @@ ipcMain.handle("impresora:imprimir-ticket", async (event, datosImpresion) => {
     // Configuración de impresión para impresora térmica de 80mm
     const printOptions = {
       silent: true, // Imprimir sin mostrar el diálogo
-      printBackground: true, // Activar para aplicar filtros CSS
+      printBackground: true, // Activar para aplicar filtros CSS (contrast, text-shadow)
       deviceName: printerName, // Nombre exacto de la impresora
       color: false, // Impresión en blanco y negro
       margins: {
-        marginType: 'none'  // Sin márgenes, se controlan desde CSS
+        marginType: 'custom',
+        top: 0,
+        bottom: 0,
+        left: 2,
+        right: 2
       },
       landscape: false,
       scaleFactor: 100,
       pagesPerSheet: 1,
       collate: false,
       copies: 1,
-      // NO usar pageSize aquí, dejamos que el CSS @page lo maneje
-      dpi: {
-        horizontal: 300,  // Aumentado de 203 a 300 DPI
-        vertical: 300     // Mayor resolución = más oscuro
+      pageSize: {
+        height: 297000, // Altura automática (A4 height en micrómetros como fallback)
+        width: 80000    // 80mm en micrómetros
       },
-      // Configuraciones adicionales para papel térmico continuo
-      preferCSSPageSize: true,
-      headerFooterEnabled: false  // Sin encabezados ni pies de página
+      dpi: {
+        horizontal: 203,
+        vertical: 203
+      }
     };
 
     sendLog("   4. Llamando a webContents.print()...");
